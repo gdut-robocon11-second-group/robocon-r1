@@ -1,4 +1,4 @@
-Get-ChildItem -Recurse -Include *.cpp,*.h,*.hpp,*.cxx,*.cc,*.ino |
+Get-ChildItem -Recurse -Include *.cpp,*.hpp,*.cxx,*.cc,*.ino |
 Where-Object {
     $_.FullName -notmatch '\\build\\' -and
     $_.FullName -notmatch '\\third_party\\' -and
@@ -8,7 +8,8 @@ Where-Object {
     $_.FullName -notmatch '\\out\\' -and
     $_.FullName -notmatch '\\cmake\\' -and
     $_.FullName -notmatch '\\Drivers\\' -and
-    $_.FullName -notmatch '\\Lib\\'
+    $_.FullName -notmatch '\\Lib\\' -and
+    $_.FullName -notmatch '\\Middlewares\\'
 } | ForEach-Object {
     clang-format -i $_.FullName
 }
