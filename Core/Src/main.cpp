@@ -22,7 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "matrix.hpp"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -199,6 +199,11 @@ void SystemClock_Config(void)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
+  gdut::matrix<float, 3, 3> m{1, 2, 3,
+                              4, 5, 6,
+                              7, 8, 9};
+  auto m2 = m.transpose();
+  auto m3 = m * m2;
   /* Infinite loop */
   for(;;)
   {
