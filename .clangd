@@ -1,54 +1,42 @@
 CompileFlags:
   Add:
-    - -isystem
+    - '-isystem'
     - Middlewares/Third_Party/tlsf
-    - -I
+    - '-I'
     - Middlewares/robocon-library/Async
-    - -I
+    - '-I'
     - Middlewares/robocon-library/BSP
-    - -I
+    - '-I'
     - Middlewares/robocon-library/Components
-    - -I
+    - '-I'
     - Middlewares/robocon-library/DSP
-    - -I
+    - '-I'
     - Middlewares/robocon-library/Modules
-    - -I
+    - '-I'
     - Middlewares/robocon-library/Third_Party/CMSIS-DSP/dsppp/Include/dsppp
-    - -I
+    - '-I'
     - Middlewares/robocon-library/Third_Party/CMSIS-DSP/dsppp/Include/dsppp/DSP
-    - -I
-    - Middlewares/robocon-library/Third_Party/CMSIS-DSP/dsppp/Include/dsppp/Helium
-    - -I
+    - '-I'
+    - >-
+      Middlewares/robocon-library/Third_Party/CMSIS-DSP/dsppp/Include/dsppp/Helium
+    - '-I'
     - Middlewares/robocon-library/Third_Party/CMSIS-DSP/dsppp/Include/dsppp/Neon
-    - -I
-    - Middlewares/robocon-library/Third_Party/CMSIS-DSP/dsppp/Include/dsppp/num_features
-    - -I
-    - Middlewares/robocon-library/Third_Party/CMSIS-DSP/dsppp/Include/dsppp/Scalar
-    - -I
+    - '-I'
+    - >-
+      Middlewares/robocon-library/Third_Party/CMSIS-DSP/dsppp/Include/dsppp/num_features
+    - '-I'
+    - >-
+      Middlewares/robocon-library/Third_Party/CMSIS-DSP/dsppp/Include/dsppp/Scalar
+    - '-I'
     - Core/Inc
-    - -I
+    - '-I'
     - Drivers/STM32F4xx_HAL_Driver/Inc
-    - -I
+    - '-I'
     - Drivers/STM32F4xx_HAL_Driver/Inc/Legacy
-    - -I
+    - '-I'
     - Drivers/CMSIS/Include
-    - -I
+    - '-I'
     - Drivers/CMSIS/Device/ST/STM32F4xx/Include
-    - -DSTM32F407xx
-    - -DUSE_HAL_DRIVER
+    - '-DSTM32F407xx'
+    - '-DUSE_HAL_DRIVER'
   CompilationDatabase: build
-
----
-If:
-  PathMatch: .*(\.(cpp|cc|cxx|hpp|hh|hxx|ipp|tpp))$
-CompileFlags:
-  Add:
-    - -std=c++23
-
----
-If:
-  PathMatch: .*/Drivers/(CMSIS|STM32F4xx_HAL_Driver)/.*
-Diagnostics:
-  Suppress:
-    - unused-includes
-  
