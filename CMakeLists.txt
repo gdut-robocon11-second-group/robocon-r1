@@ -71,3 +71,4 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     GDUT_RC_Library
     # Add user defined libraries
 )
+
