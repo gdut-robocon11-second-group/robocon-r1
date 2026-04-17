@@ -22,12 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "chassis_controller.hpp"
-#include "bsp_mpu6050.hpp"
-#include "bsp_timer.hpp"
-#include "bsp_dma.hpp"
-#include "stm32f407xx.h"
-#include "stm32f4xx_hal_tim.h"
+#include "entry_point.hpp"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -73,7 +68,7 @@ UART_HandleTypeDef huart3;
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
-  .stack_size = 128 * 4 * 4,
+  .stack_size = 128 * 4 * 2,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* USER CODE BEGIN PV */
@@ -964,7 +959,7 @@ static void MX_UART5_Init(void)
   huart5.Init.Mode = UART_MODE_TX_RX;
   huart5.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huart5.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_HalfDuplex_Init(&huart5) != HAL_OK)
+  if (HAL_UART_Init(&huart5) != HAL_OK)
   {
     Error_Handler();
   }
@@ -1186,46 +1181,18 @@ static void MX_GPIO_Init(void)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-
-  gdut::chassis_controller chassis_controller{
-    &hspi1,
-    &htim1, &htim2,
-    &htim3, &htim4,
-    &htim5, &htim9
-  };
-
-  chassis_controller.start();
-
+  gdut::entry_point::instance().init(
+    &hi2c2,&hi2c3, &hspi1, &htim1,
+    &htim2, &htim3, &htim4, &htim5,
+    &htim8, &htim9, &htim10, &htim11, &htim12, &htim13,
+    &huart4, &huart5, &huart1, &huart2, &huart3);
+  gdut::entry_point::instance().start();
   /* Infinite loop */
   for(;;)
   {
     osDelay(1000);
   }
   /* USER CODE END 5 */
-
-  // gdut::i2c i2c2{&hi2c2};
-  // gdut::mpu6050 mpu6050{&i2c2,
-  //   [](std::uint32_t ms) {
-  //     osDelay(ms);
-  //   }
-  // };
-  // mpu6050.init();
-  // for(;;) {
-  //   auto accel = mpu6050.get_accel();
-  //   auto gyro = mpu6050.get_gyro();
-  //   gdut::vector<float, 3> accel_g = {
-  //     static_cast<float>(accel.x) / 16384.0f,
-  //     static_cast<float>(accel.y) / 16384.0f,
-  //     static_cast<float>(accel.z) / 16384.0f
-  //   };
-
-  //   gdut::vector<float, 3> gyro_dps = {
-  //     static_cast<float>(gyro.x) / 131.0f,
-  //     static_cast<float>(gyro.y) / 131.0f,
-  //     static_cast<float>(gyro.z) / 131.0f
-  //   };
-  //   osDelay(1000);
-  // }
 }
 
 /**
