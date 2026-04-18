@@ -11,6 +11,19 @@
 #include "stm32f4xx_hal_gpio.h"
 #include "thread.hpp"
 #include "uncopyable.hpp"
+#include <cstdio>
+
+// extern "C" int __io_putchar(int ch);
+
+// void print_float(float value) {
+//   if (value >= 0) {
+//     std::printf("%d.%d", static_cast<int>(value), static_cast<int>((value -
+//     static_cast<int>(value)) * 1000));
+//   } else {
+//     std::printf("-%d.%d", static_cast<int>(-value), static_cast<int>((-value
+//     - static_cast<int>(-value)) * 1000));
+//   }
+// }
 
 namespace gdut {
 
@@ -76,73 +89,112 @@ protected:
     motor motor3{&tim5, TIM_CHANNEL_4, GPIOG, GPIO_PIN_1, &tim3, 13};
     motor motor4{&tim9, TIM_CHANNEL_2, GPIOE, GPIO_PIN_7, &tim4, 13};
 
-    thread<256, osPriorityAboveNormal> encoder_thread{[&]() {
+    std::atomic<float> target_speed1{0.0f}, target_speed2{0.0f},
+        target_speed3{0.0f}, target_speed4{0.0f};
+
+    thread<1024, osPriorityAboveNormal> encoder_thread{[&]() {
       steady_clock::time_point last_time = steady_clock::now();
+      // Ki减小到0.05，积分增长速度更合理
+      pid_controller pid1{1.0f, 0.7f, 0.0f, 0.015f, 1.0f, -1.0f, 1.0f};
+      pid_controller pid2{1.0f, 0.7f, 0.0f, 0.015f, 1.0f, -1.0f, 1.0f};
+      pid_controller pid3{1.0f, 0.7f, 0.0f, 0.015f, 1.0f, -1.0f, 1.0f};
+      pid_controller pid4{1.0f, 0.7f, 0.0f, 0.015f, 1.0f, -1.0f, 1.0f};
       for (;;) {
         auto now = steady_clock::now();
-        float delta_time = static_cast<float>((now - last_time).count()) /
-                           static_cast<float>(steady_clock::period::den);
+        float delta_time =
+            std::chrono::duration<float>(now - last_time).count() * 1000.0f;
         motor1.refresh_encoder_state(delta_time);
         motor2.refresh_encoder_state(delta_time);
         motor3.refresh_encoder_state(delta_time);
         motor4.refresh_encoder_state(delta_time);
-        osDelay(1);
+
+        // motor.get_current_speed() 已经是按 ppr 和采样周期换算后的速度
+        // 控制器的输入，使其更敏感，避免死区过大导致响应迟钝
+        float speed1 =
+            motor1.get_current_speed() / 3584.61562f * 10000.0f / 1.5f;
+        float speed2 =
+            -motor2.get_current_speed() / 3584.61562f * 10000.0f / 1.5f;
+        float speed3 =
+            -motor3.get_current_speed() / 3584.61562f * 10000.0f / 1.5f;
+        float speed4 =
+            -motor4.get_current_speed() / 3584.61562f * 10000.0f / 1.5f;
+
+        std::atomic_thread_fence(std::memory_order_acquire);
+        const float target1 = target_speed1.load(std::memory_order_relaxed);
+        const float target2 = target_speed2.load(std::memory_order_relaxed);
+        const float target3 = target_speed3.load(std::memory_order_relaxed);
+        const float target4 = target_speed4.load(std::memory_order_relaxed);
+
+        pid1.set_target(target1);
+        pid2.set_target(target2);
+        pid3.set_target(target3);
+        pid4.set_target(target4);
+
+        float control1 = pid1.update(speed1, delta_time);
+        float control2 = pid2.update(speed2, delta_time);
+        float control3 = pid3.update(speed3, delta_time);
+        float control4 = pid4.update(speed4, delta_time);
+        motor1.set_pwm_duty(control1);
+        motor2.set_pwm_duty(control2);
+        motor3.set_pwm_duty(control3);
+        motor4.set_pwm_duty(control4);
+        last_time = now;
+        osDelay(2);
       }
     }};
     chassis_kinematics<1.0f> kinematics;
-    pid_controller pid1{3.0f, 0.1f, 0.1f, 0.0f, 0.3f, -1.0f, 1.0f};
-    pid_controller pid2{3.0f, 0.1f, 0.1f, 0.0f, 0.3f, -1.0f, 1.0f};
-    pid_controller pid3{3.0f, 0.1f, 0.1f, 0.0f, 0.3f, -1.0f, 1.0f};
-    pid_controller pid4{3.0f, 0.1f, 0.1f, 0.0f, 0.3f, -1.0f, 1.0f};
-    float target_speed1 = 0.0f, target_speed2 = 0.0f, target_speed3 = 0.0f,
-          target_speed4 = 0.0f;
-    gdut::steady_clock::time_point last_control_time =
-        gdut::steady_clock::now();
+    bool ps2_correct = false;
+    int counter = 0;
+    float x_avg = 0.0f, y_avg = 0.0f, w_avg = 0.0f;
 
     /* Infinite loop */
     for (;;) {
       if (ps2_controller.poll()) {
         const auto state = ps2_controller.read_state();
-        float vy = (state.left_y / 127.0f) - 1.0f;
-        float vx = -((state.left_x / 127.0f) - 1.0f);
-        float w = (state.right_x / 127.0f) - 1.0f;
+        if (state.select_is_pressed()) {
+          ps2_correct = true;
+        }
+        float vy =
+            (state.left_y / 127.0f) - 1.0f - (ps2_correct ? 0.0f : y_avg);
+        float vx =
+            -((state.left_x / 127.0f) - 1.0f - (ps2_correct ? 0.0f : x_avg));
+        float w =
+            ((state.right_x / 127.0f) - 1.0f - (ps2_correct ? 0.0f : w_avg));
+
+        constexpr float max_total_speed = 0.1f;
+        float total_speed = std::sqrt(vx * vx + vy * vy + w * w);
+        if (total_speed > max_total_speed && total_speed > 1e-6f) {
+          const float scale = max_total_speed / total_speed;
+          vx *= scale;
+          vy *= scale;
+          w *= scale;
+        }
+
+        if (ps2_correct && counter++ < 100) {
+          x_avg += vx;
+          y_avg += vy;
+          w_avg += w;
+        } else if (counter == 100) {
+          ps2_correct = false;
+          counter = 0;
+          x_avg /= 100.0f;
+          y_avg /= 100.0f;
+          w_avg /= 100.0f;
+        }
         auto wheel_speed = kinematics.forward_kinematics({vx, vy, w});
         // 因为电机安装方向的关系，轮速需要进行符号调整
-        target_speed1 = -wheel_speed[0];
-        target_speed2 = -wheel_speed[1];
-        target_speed3 = -wheel_speed[2];
-        target_speed4 = wheel_speed[3];
-        // motor1.set_pwm_duty(-wheel_speed[0]); // A
-        // motor2.set_pwm_duty(-wheel_speed[1]); // B
-        // motor3.set_pwm_duty(-wheel_speed[2]); // C
-        // motor4.set_pwm_duty(wheel_speed[3]);  // D
+        target_speed1.store(wheel_speed[0], std::memory_order_relaxed);
+        target_speed2.store(wheel_speed[1], std::memory_order_relaxed);
+        target_speed3.store(wheel_speed[2], std::memory_order_relaxed);
+        target_speed4.store(-wheel_speed[3], std::memory_order_relaxed);
+        std::atomic_thread_fence(std::memory_order_release);
+      } else {
+        target_speed1.store(0.0f, std::memory_order_relaxed);
+        target_speed2.store(0.0f, std::memory_order_relaxed);
+        target_speed3.store(0.0f, std::memory_order_relaxed);
+        target_speed4.store(0.0f, std::memory_order_relaxed);
+        std::atomic_thread_fence(std::memory_order_release);
       }
-      float speed1 = motor1.get_current_speed();
-      float speed2 = motor2.get_current_speed();
-      float speed3 = motor3.get_current_speed();
-      float speed4 = motor4.get_current_speed();
-      auto now = gdut::steady_clock::now();
-      float control1 = pid1.update(
-          target_speed1 - speed1,
-          std::chrono::duration<float>{now - last_control_time}.count());
-      float control2 = pid2.update(
-          target_speed2 - speed2,
-          std::chrono::duration<float>{now - last_control_time}.count());
-      float control3 = pid3.update(
-          target_speed3 - speed3,
-          std::chrono::duration<float>{now - last_control_time}.count());
-      float control4 = pid4.update(
-          target_speed4 - speed4,
-          std::chrono::duration<float>{now - last_control_time}.count());
-      motor1.set_pwm_duty(control1);
-      motor2.set_pwm_duty(control2);
-      motor3.set_pwm_duty(control3);
-      motor4.set_pwm_duty(control4);
-      // motor1.set_pwm_duty(target_speed1);
-      // motor2.set_pwm_duty(target_speed2);
-      // motor3.set_pwm_duty(target_speed3);
-      // motor4.set_pwm_duty(target_speed4);
-      last_control_time = now;
       osDelay(10);
     }
   }

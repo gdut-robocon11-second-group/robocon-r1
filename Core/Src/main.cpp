@@ -122,6 +122,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -1168,7 +1169,12 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+// extern "C" int __io_putchar(int ch)
+// {
+//   uint8_t byte = static_cast<uint8_t>(ch);
+//   HAL_UART_Transmit(&huart4, &byte, 1U, 10U);
+//   return ch;
+// }
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
