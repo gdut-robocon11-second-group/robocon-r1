@@ -63,12 +63,13 @@ UART_HandleTypeDef huart5;
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
+DMA_HandleTypeDef hdma_usart2_rx;
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
-  .stack_size = 128 * 4 * 2,
+  .stack_size = 4096,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* USER CODE BEGIN PV */
@@ -78,6 +79,7 @@ const osThreadAttr_t defaultTask_attributes = {
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM2_Init(void);
@@ -122,7 +124,6 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -138,6 +139,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_SPI1_Init();
   MX_TIM1_Init();
   MX_TIM2_Init();
@@ -178,6 +180,11 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
+  gdut::entry_point::instance().init(
+    &hi2c2,&hi2c3, &hspi1, &htim1,
+    &htim2, &htim3, &htim4, &htim5,
+    &htim8, &htim9, &htim10, &htim11, &htim12, &htim13,
+    &huart4, &huart5, &huart1, &huart2, &huart3);
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
@@ -927,7 +934,7 @@ static void MX_UART4_Init(void)
   huart4.Init.Mode = UART_MODE_TX_RX;
   huart4.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huart4.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_HalfDuplex_Init(&huart4) != HAL_OK)
+  if (HAL_UART_Init(&huart4) != HAL_OK)
   {
     Error_Handler();
   }
@@ -960,7 +967,7 @@ static void MX_UART5_Init(void)
   huart5.Init.Mode = UART_MODE_TX_RX;
   huart5.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huart5.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart5) != HAL_OK)
+  if (HAL_HalfDuplex_Init(&huart5) != HAL_OK)
   {
     Error_Handler();
   }
@@ -1070,6 +1077,22 @@ static void MX_USART3_UART_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -1175,6 +1198,24 @@ static void MX_GPIO_Init(void)
 //   HAL_UART_Transmit(&huart4, &byte, 1U, 10U);
 //   return ch;
 // }
+uint8_t uart2_rx_buffer[256];
+volatile uint32_t uart2_rx_event_count = 0;
+volatile uint32_t uart2_restart_fail_count = 0;
+volatile uint16_t uart2_last_rx_size = 0;
+
+extern "C" void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
+  if (huart->Instance == USART2) {
+    uart2_last_rx_size = Size;
+    uart2_rx_event_count++;
+    if (HAL_UARTEx_ReceiveToIdle_DMA(&huart2, uart2_rx_buffer, sizeof(uart2_rx_buffer)) != HAL_OK) {
+      uart2_restart_fail_count++;
+    } else {
+      __HAL_DMA_DISABLE_IT(huart2.hdmarx, DMA_IT_HT);
+    }
+  } else if (huart->Instance == UART4) {
+    gdut::entry_point::instance().uart4_rx_callback(Size);
+  }
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -1187,11 +1228,16 @@ static void MX_GPIO_Init(void)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-  gdut::entry_point::instance().init(
-    &hi2c2,&hi2c3, &hspi1, &htim1,
-    &htim2, &htim3, &htim4, &htim5,
-    &htim8, &htim9, &htim10, &htim11, &htim12, &htim13,
-    &huart4, &huart5, &huart1, &huart2, &huart3);
+  // 启动USART2的DMA接收
+  if (HAL_UARTEx_ReceiveToIdle_DMA(&huart2, uart2_rx_buffer, sizeof(uart2_rx_buffer)) != HAL_OK) {
+    uart2_restart_fail_count++;
+  } else {
+    __HAL_DMA_DISABLE_IT(huart2.hdmarx, DMA_IT_HT);
+  }
+  // uint8_t frame[] = {0x55, 0xAF, 0x02, 0x00, static_cast<uint8_t>(0x55 + 0xAF + 0x02 + 0x00)};
+  // HAL_UART_Transmit(&huart2, frame, sizeof(frame), 10);
+
+  // 启动主程序
   gdut::entry_point::instance().start();
   /* Infinite loop */
   for(;;)

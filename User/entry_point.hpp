@@ -2,14 +2,15 @@
 #define ENTRY_POINT_HPP
 
 #include "chassis_controller.hpp"
-#include "cmsis_os2.h"
 #include "stm32f407xx.h"
 #include "stm32f4xx_hal.h"
-#include "thread.hpp"
+#include "transfer_controller.hpp"
+#include "uncopyable.hpp"
+#include "user_controller.hpp"
 
 namespace gdut {
 
-class entry_point {
+class entry_point : private uncopyable {
 public:
   void init(I2C_HandleTypeDef *hi2c2, I2C_HandleTypeDef *hi2c3,
             SPI_HandleTypeDef *hspi1, TIM_HandleTypeDef *htim1,
@@ -21,36 +22,36 @@ public:
             UART_HandleTypeDef *huart4, UART_HandleTypeDef *huart5,
             UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2,
             UART_HandleTypeDef *huart3) {
-    hi2c2_ = hi2c2;
-    hi2c3_ = hi2c3;
-    hspi1_ = hspi1;
-    htim1_ = htim1;
-    htim2_ = htim2;
-    htim3_ = htim3;
-    htim4_ = htim4;
-    htim5_ = htim5;
-    htim8_ = htim8;
-    htim9_ = htim9;
-    htim10_ = htim10;
-    htim11_ = htim11;
-    htim12_ = htim12;
-    htim13_ = htim13;
-    huart4_ = huart4;
-    huart5_ = huart5;
-    huart1_ = huart1;
-    huart2_ = huart2;
-    huart3_ = huart3;
-    initialized_ = true;
+    m_hi2c2 = hi2c2;
+    m_hi2c3 = hi2c3;
+    m_hspi1 = hspi1;
+    m_htim1 = htim1;
+    m_htim2 = htim2;
+    m_htim3 = htim3;
+    m_htim4 = htim4;
+    m_htim5 = htim5;
+    m_htim8 = htim8;
+    m_htim9 = htim9;
+    m_htim10 = htim10;
+    m_htim11 = htim11;
+    m_htim12 = htim12;
+    m_htim13 = htim13;
+    m_huart4 = huart4;
+    m_huart5 = huart5;
+    m_huart1 = huart1;
+    m_huart2 = huart2;
+    m_huart3 = huart3;
+    m_initialized = true;
   }
 
   void start() {
-    if (!initialized_) {
+    if (!m_initialized) {
       // Handle error: not initialized
       return;
     }
-    chassis_controller_.set_parameters(hspi1_, htim1_, htim2_, htim3_, htim4_,
-                                       htim5_, htim9_);
-    chassis_controller_.start();
+    m_user_controller.set_parameters(m_hspi1, m_htim1, m_htim2, m_htim3,
+                                     m_htim4, m_htim5, m_htim9, m_huart4);
+    m_user_controller.start();
   }
 
   static entry_point &instance() {
@@ -58,35 +59,37 @@ public:
     return instance;
   }
 
+  void uart4_rx_callback(uint16_t size) {
+    m_user_controller.transfer().uart_rx_callback_it(size);
+  }
+
 protected:
   entry_point() = default;
   ~entry_point() = default;
-  entry_point(const entry_point &) = delete;
-  entry_point &operator=(const entry_point &) = delete;
 
 private:
-  bool initialized_ = false;
-  gdut::chassis_controller chassis_controller_{};
+  bool m_initialized = false;
+  user_controller m_user_controller;
 
-  I2C_HandleTypeDef *hi2c2_;
-  I2C_HandleTypeDef *hi2c3_;
-  SPI_HandleTypeDef *hspi1_;
-  TIM_HandleTypeDef *htim1_;
-  TIM_HandleTypeDef *htim2_;
-  TIM_HandleTypeDef *htim3_;
-  TIM_HandleTypeDef *htim4_;
-  TIM_HandleTypeDef *htim5_;
-  TIM_HandleTypeDef *htim8_;
-  TIM_HandleTypeDef *htim9_;
-  TIM_HandleTypeDef *htim10_;
-  TIM_HandleTypeDef *htim11_;
-  TIM_HandleTypeDef *htim12_;
-  TIM_HandleTypeDef *htim13_;
-  UART_HandleTypeDef *huart4_;
-  UART_HandleTypeDef *huart5_;
-  UART_HandleTypeDef *huart1_;
-  UART_HandleTypeDef *huart2_;
-  UART_HandleTypeDef *huart3_;
+  I2C_HandleTypeDef *m_hi2c2;
+  I2C_HandleTypeDef *m_hi2c3;
+  SPI_HandleTypeDef *m_hspi1;
+  TIM_HandleTypeDef *m_htim1;
+  TIM_HandleTypeDef *m_htim2;
+  TIM_HandleTypeDef *m_htim3;
+  TIM_HandleTypeDef *m_htim4;
+  TIM_HandleTypeDef *m_htim5;
+  TIM_HandleTypeDef *m_htim8;
+  TIM_HandleTypeDef *m_htim9;
+  TIM_HandleTypeDef *m_htim10;
+  TIM_HandleTypeDef *m_htim11;
+  TIM_HandleTypeDef *m_htim12;
+  TIM_HandleTypeDef *m_htim13;
+  UART_HandleTypeDef *m_huart4;
+  UART_HandleTypeDef *m_huart5;
+  UART_HandleTypeDef *m_huart1;
+  UART_HandleTypeDef *m_huart2;
+  UART_HandleTypeDef *m_huart3;
 };
 
 } // namespace gdut
