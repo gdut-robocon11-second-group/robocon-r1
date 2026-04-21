@@ -23,6 +23,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "entry_point.hpp"
+#include "bsp_atk_ms901m.hpp"
+#include "stm32f4xx_hal_uart.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -1198,22 +1200,18 @@ static void MX_GPIO_Init(void)
 //   HAL_UART_Transmit(&huart4, &byte, 1U, 10U);
 //   return ch;
 // }
-uint8_t uart2_rx_buffer[256];
-volatile uint32_t uart2_rx_event_count = 0;
-volatile uint32_t uart2_restart_fail_count = 0;
-volatile uint16_t uart2_last_rx_size = 0;
 
 extern "C" void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
   if (huart->Instance == USART2) {
-    uart2_last_rx_size = Size;
-    uart2_rx_event_count++;
-    if (HAL_UARTEx_ReceiveToIdle_DMA(&huart2, uart2_rx_buffer, sizeof(uart2_rx_buffer)) != HAL_OK) {
-      uart2_restart_fail_count++;
-    } else {
-      __HAL_DMA_DISABLE_IT(huart2.hdmarx, DMA_IT_HT);
-    }
+    gdut::entry_point::instance().uart2_rx_callback(Size);
   } else if (huart->Instance == UART4) {
     gdut::entry_point::instance().uart4_rx_callback(Size);
+  }
+}
+
+extern "C" void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
+  if (huart->Instance == USART2) {
+    // ms901.handle_error_rx();
   }
 }
 /* USER CODE END 4 */
@@ -1228,14 +1226,6 @@ extern "C" void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t S
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-  // 启动USART2的DMA接收
-  if (HAL_UARTEx_ReceiveToIdle_DMA(&huart2, uart2_rx_buffer, sizeof(uart2_rx_buffer)) != HAL_OK) {
-    uart2_restart_fail_count++;
-  } else {
-    __HAL_DMA_DISABLE_IT(huart2.hdmarx, DMA_IT_HT);
-  }
-  // uint8_t frame[] = {0x55, 0xAF, 0x02, 0x00, static_cast<uint8_t>(0x55 + 0xAF + 0x02 + 0x00)};
-  // HAL_UART_Transmit(&huart2, frame, sizeof(frame), 10);
 
   // 启动主程序
   gdut::entry_point::instance().start();

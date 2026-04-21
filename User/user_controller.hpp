@@ -1,6 +1,9 @@
 #ifndef USER_CONTROLLER_HPP
 #define USER_CONTROLLER_HPP
 
+#include "auto_controller.hpp"
+#include "bsp_ps2.hpp"
+#include "bsp_spi.hpp"
 #include "chassis_controller.hpp"
 #include "stm32f4xx_hal.h"
 #include "thread.hpp"
@@ -17,9 +20,10 @@ public:
   void set_parameters(SPI_HandleTypeDef *m_hspi1, TIM_HandleTypeDef *htim1,
                       TIM_HandleTypeDef *htim2, TIM_HandleTypeDef *htim3,
                       TIM_HandleTypeDef *htim4, TIM_HandleTypeDef *htim5,
-                      TIM_HandleTypeDef *htim9, UART_HandleTypeDef *huart4) {
+                      TIM_HandleTypeDef *htim9, UART_HandleTypeDef *huart2,
+                      UART_HandleTypeDef *huart4) {
     m_chassis_controller.set_parameters(htim1, htim2, htim3, htim4, htim5,
-                                        htim9);
+                                        htim9, huart2);
     m_hspi = m_hspi1;
     m_transfer_controller.set_uart(huart4);
     m_transfer_controller.set_send_function(
@@ -48,13 +52,16 @@ public:
     }
     m_chassis_controller.start();
     m_transfer_controller.start();
-    m_thread = thread<2048>{"user_controller_thread", [this]() { run_in_thread(); }};
+    m_thread =
+        thread<2048>{"user_controller_thread", [this]() { run_in_thread(); }};
   }
 
   chassis_controller &chassis() { return m_chassis_controller; }
   const chassis_controller &chassis() const { return m_chassis_controller; }
   transfer_controller &transfer() { return m_transfer_controller; }
   const transfer_controller &transfer() const { return m_transfer_controller; }
+  atk_ms901m &imu() { return m_chassis_controller.get_imu(); }
+  const atk_ms901m &imu() const { return m_chassis_controller.get_imu(); }
 
 protected:
   void run_in_thread() {
@@ -122,7 +129,7 @@ protected:
           w *= scale * 1.5f; // 适当增加旋转速度的权重，使其在总速限制下更有响应
         }
 
-        m_chassis_controller.set_speed(vx, vy, w);
+        m_chassis_controller.set_speed({vx, vy, w});
       }
       osDelay(10);
     }

@@ -158,14 +158,15 @@ public:
       return; // Processing thread already running
     }
     m_message_queue = message_queue<queue_data>(10);
-    m_processing_thread = thread<512>("raspberry_uart_processing_thread", [this] {
-      queue_data msg;
-      while (true) {
-        if (m_message_queue.receive(msg)) {
-          this->original_receive(msg.data, msg.data + msg.size);
-        }
-      }
-    });
+    m_processing_thread =
+        thread<512>("raspberry_uart_processing_thread", [this] {
+          queue_data msg;
+          while (true) {
+            if (m_message_queue.receive(msg)) {
+              this->original_receive(msg.data, msg.data + msg.size);
+            }
+          }
+        });
     HAL_UARTEx_ReceiveToIdle_IT(m_uart, m_receive_buffer,
                                 sizeof(m_receive_buffer));
   }

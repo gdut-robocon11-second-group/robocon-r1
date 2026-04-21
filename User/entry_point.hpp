@@ -1,7 +1,6 @@
 #ifndef ENTRY_POINT_HPP
 #define ENTRY_POINT_HPP
 
-#include "chassis_controller.hpp"
 #include "stm32f407xx.h"
 #include "stm32f4xx_hal.h"
 #include "transfer_controller.hpp"
@@ -50,7 +49,8 @@ public:
       return;
     }
     m_user_controller.set_parameters(m_hspi1, m_htim1, m_htim2, m_htim3,
-                                     m_htim4, m_htim5, m_htim9, m_huart4);
+                                     m_htim4, m_htim5, m_htim9, m_huart2,
+                                     m_huart4);
     m_user_controller.start();
   }
 
@@ -61,6 +61,10 @@ public:
 
   void uart4_rx_callback(uint16_t size) {
     m_user_controller.transfer().uart_rx_callback_it(size);
+  }
+
+  void uart2_rx_callback(uint16_t size) {
+    m_user_controller.imu().handle_uart_rx(size);
   }
 
 protected:
