@@ -79,7 +79,7 @@ protected:
 
     bool ps2_correct = false;
     int counter = 0;
-    float x_avg = 0.0f, y_avg = 0.0f, w_avg = 0.0f;
+    float lx_avg = 0.0f, ly_avg = 0.0f, rx_avg = 0.0f, ry_avg = 0.0f;
 
     /* Infinite loop */
     while (true) {
@@ -101,35 +101,32 @@ protected:
           ps2_correct = true; // 按下 select 键，进入校正模式
           counter = 0;
         }
-        float vy =
-            (state.left_y / 127.0f) - 1.0f - (ps2_correct ? 0.0f : y_avg);
-        float vx =
-            -((state.left_x / 127.0f) - 1.0f - (ps2_correct ? 0.0f : x_avg));
-        float w =
-            -((state.right_x / 127.0f) - 1.0f - (ps2_correct ? 0.0f : w_avg));
 
+        // 根据读取的状态计算底盘速度，进行简单的校正和限制
+        float ly =
+            (state.left_y / 127.0f) - 1.0f - (ps2_correct ? 0.0f : ly_avg);
+        float lx =
+            -((state.left_x / 127.0f) - 1.0f - (ps2_correct ? 0.0f : lx_avg));
+        float ry =
+            -((state.right_y / 127.0f) - 1.0f - (ps2_correct ? 0.0f : ry_avg));
+        float rx =
+            -((state.right_x / 127.0f) - 1.0f - (ps2_correct ? 0.0f : rx_avg));
         if (ps2_correct && counter++ < 100) {
-          x_avg += vx;
-          y_avg += vy;
-          w_avg += w;
+          lx_avg += lx;
+          ly_avg += ly;
+          rx_avg += rx;
+          ry_avg += ry;
         } else if (counter == 100) {
           ps2_correct = false;
           counter = 0;
-          x_avg /= 100.0f;
-          y_avg /= 100.0f;
-          w_avg /= 100.0f;
+          lx_avg /= 100.0f;
+          ly_avg /= 100.0f;
+          rx_avg /= 100.0f;
+          ry_avg /= 100.0f;
         }
 
-        constexpr float max_total_speed = 0.1f;
-        float total_speed = std::sqrt(vx * vx + vy * vy + w * w);
-        if (total_speed > max_total_speed && total_speed > 1e-6f) {
-          const float scale = max_total_speed / total_speed;
-          vx *= scale;
-          vy *= scale;
-          w *= scale * 1.5f; // 适当增加旋转速度的权重，使其在总速限制下更有响应
-        }
-
-        m_chassis_controller.set_speed({vx, vy, w});
+        // 将左摇杆的Y轴控制前后，左摇杆的X轴控制左右，右摇杆的X轴控制旋转速度
+        set_chassis_speed(ly, lx, rx);
       }
       osDelay(10);
     }
@@ -138,6 +135,19 @@ protected:
   void send_number_request() { m_transfer_controller.send_number_request(); }
 
   void send_qr_code_request() { m_transfer_controller.send_qr_code_request(); }
+
+protected:
+  void set_chassis_speed(float vx, float vy, float omega) {
+    constexpr float max_total_speed = 0.1f;
+    float total_speed = std::sqrt(vx * vx + vy * vy + omega * omega);
+    if (total_speed > max_total_speed && total_speed > 1e-6f) {
+      const float scale = max_total_speed / total_speed;
+      vx *= scale;
+      vy *= scale;
+      omega *= scale * 1.5f; // 适当增加旋转速度的权重，使其在总速限制下更有响应
+    }
+    m_chassis_controller.set_speed({vx, vy, omega});
+  }
 
 private:
   chassis_controller m_chassis_controller;

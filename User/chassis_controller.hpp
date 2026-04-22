@@ -89,6 +89,11 @@ public:
             1000.0f;
         m_last_euler_update_time = now;
 
+        // 根据欧拉角数据计算当前速度和角速度，更新原子变量
+        m_current_w.store((yaw - m_current_euler_angles.yaw) /
+                              (m_euler_update_interval + 1e-6f),
+                          std::memory_order_release);
+
         // 更新当前欧拉角数据
         m_current_euler_angles.roll = roll;
         m_current_euler_angles.pitch = pitch;
@@ -108,6 +113,17 @@ public:
           std::chrono::duration<float>(now - m_last_gyro_and_acc_update_time)
               .count() *
           1000.0f;
+
+      // 根据陀螺仪和加速度计数据计算当前速度，更新原子变量
+      std::atomic_thread_fence(std::memory_order_acquire);
+      const float last_vx = m_current_vx.load(std::memory_order_relaxed);
+      const float last_vy = m_current_vy.load(std::memory_order_relaxed);
+      m_current_vx.store(last_vx + acc_x * m_gyro_and_acc_update_interval,
+                         std::memory_order_relaxed);
+      m_current_vy.store(last_vy + acc_y * m_gyro_and_acc_update_interval,
+                         std::memory_order_relaxed);
+      std::atomic_thread_fence(std::memory_order_release);
+
       // 更新最后一次接收陀螺仪和加速度计数据的时间戳
       m_last_gyro_and_acc_update_time = now;
       m_current_gyro_and_acc.gyro_x = gyro_x;
@@ -123,6 +139,7 @@ public:
     if (m_thread.joinable()) {
       return; // 已经在运行了
     }
+    m_last_imu_control_time = steady_clock::now();
     m_imu.start();
     m_thread = thread<2048, osPriorityRealtime>{
         "encoder_thread", [&]() {
@@ -187,32 +204,46 @@ public:
           pid_controller imu_vy{1.0f, 0.5f, 0.0f, 0.01f, 1.0f, -1.0f, 1.0f};
           pid_controller imu_w{1.0f, 0.5f, 0.0f, 0.01f, 1.0f, -1.0f, 1.0f};
           while (true) {
-            std::lock_guard<mutex> lock(m_imu_mutex);
-            if (!m_imu_initialized) {
-              continue; // 在 IMU 初始化之前不进行控制
-            }
-            // 获取当前速度和角速度，更新 PID 控制器的目标值
-            std::atomic_thread_fence(std::memory_order_acquire);
-            const float target_vx = m_target_vx.load(std::memory_order_relaxed);
-            const float target_vy = m_target_vy.load(std::memory_order_relaxed);
-            const float target_w = m_target_w.load(std::memory_order_relaxed);
-            imu_vx.set_target(target_vx);
-            imu_vy.set_target(target_vy);
-            imu_w.set_target(target_w);
+            {
+              std::lock_guard<mutex> lock(m_imu_mutex);
+              if (!m_imu_initialized) {
+                osDelay(5);
+                continue; // 在 IMU 初始化之前不进行控制
+              }
+              // 获取当前速度和角速度，更新 PID 控制器的目标值
+              std::atomic_thread_fence(std::memory_order_acquire);
+              const float target_vx =
+                  m_target_vx.load(std::memory_order_relaxed);
+              const float target_vy =
+                  m_target_vy.load(std::memory_order_relaxed);
+              const float target_w = m_target_w.load(std::memory_order_relaxed);
+              imu_vx.set_target(target_vx);
+              imu_vy.set_target(target_vy);
+              imu_w.set_target(target_w);
 
-            // 更新 PID 控制器，获取控制输出，并设置 PWM 占空比
-            // 目前直接使用加速度计的 x 和 y
-            // 轴数据来控制前后和左右速度，陀螺仪的 z 轴数据来控制旋转速度
-            // 后面可能会根据实际情况进行调整，比如使用融合算法来综合考虑加速度计和陀螺仪的数据，或者使用更复杂的控制策略
-            float control_vx = imu_vx.update(m_current_gyro_and_acc.acc_x,
-                                             m_gyro_and_acc_update_interval);
-            float control_vy = imu_vy.update(m_current_gyro_and_acc.acc_y,
-                                             m_gyro_and_acc_update_interval);
-            float control_w = imu_w.update(m_current_gyro_and_acc.gyro_z,
-                                           m_gyro_and_acc_update_interval);
-            // 将 IMU 控制输出与编码器控制输出进行融合，得到最终的控制信号
-            // 这里简单地将两者进行加权平均，权重可以根据实际情况进行调整
-            set_encoder_target_speed({control_vx, control_vy, control_w});
+              // 更新积分项，积分项的增长速度与陀螺仪和加速度计数据的更新频率成正比
+              auto now = steady_clock::now();
+              float delta_time =
+                  std::chrono::duration<float>(now - m_last_imu_control_time)
+                      .count() *
+                  1000.0f;
+              m_last_imu_control_time = now;
+
+              // 更新 PID 控制器，获取控制输出，并设置 PWM 占空比
+              // 目前直接使用加速度计的 x 和 y
+              // 轴数据来控制前后和左右速度，陀螺仪的 z 轴数据来控制旋转速度
+              // 后面可能会根据实际情况进行调整，比如使用融合算法来综合考虑加速度计和陀螺仪的数据，或者使用更复杂的控制策略
+              std::atomic_thread_fence(std::memory_order_acquire);
+              float control_vx = imu_vx.update(
+                  m_current_vx.load(std::memory_order_relaxed), delta_time);
+              float control_vy = imu_vy.update(
+                  m_current_vy.load(std::memory_order_relaxed), delta_time);
+              float control_w = imu_w.update(
+                  m_current_w.load(std::memory_order_relaxed), delta_time);
+              // 将 IMU 控制输出与编码器控制输出进行融合，得到最终的控制信号
+              // 这里简单地将两者进行加权平均，权重可以根据实际情况进行调整
+              set_encoder_target_speed({control_vx, control_vy, control_w});
+            }
             osDelay(5);
           }
         }};
@@ -320,9 +351,14 @@ private:
   gyro_and_acc m_current_gyro_and_acc{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
   steady_clock::time_point m_last_gyro_and_acc_update_time;
   float m_gyro_and_acc_update_interval{0.0f};
+  steady_clock::time_point m_last_imu_control_time;
+
   std::atomic<float> m_target_vx{0.0f};
   std::atomic<float> m_target_vy{0.0f};
   std::atomic<float> m_target_w{0.0f};
+  std::atomic<float> m_current_vx{0.0f};
+  std::atomic<float> m_current_vy{0.0f};
+  std::atomic<float> m_current_w{0.0f};
 };
 
 } // namespace gdut

@@ -159,7 +159,7 @@ public:
     }
     m_message_queue = message_queue<queue_data>(10);
     m_processing_thread =
-        thread<512>("raspberry_uart_processing_thread", [this] {
+        thread<2048>("raspberry_uart_processing_thread", [this] {
           queue_data msg;
           while (true) {
             if (m_message_queue.receive(msg)) {
@@ -186,7 +186,7 @@ private:
   transfer_protocol m_protocol;
   message_queue<queue_data> m_message_queue{empty_message_queue};
   uint8_t m_receive_buffer[256];
-  thread<512> m_processing_thread{empty_thread};
+  thread<2048> m_processing_thread{empty_thread};
 };
 
 } // namespace gdut
