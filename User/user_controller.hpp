@@ -14,6 +14,7 @@
 #include "thread.hpp"
 #include "transfer_controller.hpp"
 #include "uncopyable.hpp"
+#include <atomic>
 
 namespace gdut {
 
@@ -52,6 +53,8 @@ public:
           auto number = result.number_detected;
           // 这里可以根据需要处理YOLO检测结果，例如更新底盘控制器的状态
           // 或者将结果发送到其他模块
+          // 0.0f是占位的mid_x，后续可以根据需要修改为实际值
+          m_auto_controller.put_yolo_result(number, 0.0f);
         });
     m_transfer_controller.set_qr_code_result_callback(
         [this](transfer_protocol::qr_code_detection_result result) {
@@ -68,6 +71,7 @@ public:
         });
     // 设置PCA9685控制器参数
     m_pca9685_controller.set_parameters(m_hi2c3);
+    m_pca9685_controller.init();
     // 设置步进电机控制器参数
     m_motor.set_parameters(&m_gpio_proxy, &m_tim8_timer, TIM_CHANNEL_1);
     m_auto_controller.set_parameters(&m_transfer_controller,
@@ -118,8 +122,6 @@ protected:
 
         // 手动模式才响应手柄输入
         if (m_mode == mode::manual_mode) {
-          // 按下select键，切换自动/手动模式
-          press_select(state);
 
           // 按下三角键，步进电机抬升
           press_triangle(state);
@@ -170,159 +172,140 @@ protected:
         } else if (m_mode == mode::auto_mode) {
           // 自动模式下可以根据需要处理PS2输入，例如按键控制某些自动行为
 
-          if (state.start_is_pressed()) {
-            // 如果按下了start键，自动执行
-            m_auto_controller.start();
-          }
-
-          if (state.square_is_pressed()) {
-            // 如果按下了方块键，发送二维码识别请求
-            send_qr_code_request();
-          }
-
           if (state.up_is_pressed()) {
             // 如果按下了up键
             m_auto_controller.set_auto_submode(
                 auto_controller::auto_submode::left_mode);
-          }
+          
+            }
 
-          if (state.down_is_pressed()) {
-            // 如果按下了down键
-            m_auto_controller.set_auto_submode(
-                auto_controller::auto_submode::right_mode);
+            if (state.down_is_pressed()) {
+              // 如果按下了down键
+              m_auto_controller.set_auto_submode(
+                  auto_controller::auto_submode::right_mode);
+            }
           }
         }
-      }
-      osDelay(10);
-    }
-  }
-
-  void send_number_request() { m_transfer_controller.send_number_request(); }
-
-  void send_qr_code_request() { m_transfer_controller.send_qr_code_request(); }
-
-protected:
-  void set_chassis_speed(float vx, float vy, float omega) {
-    constexpr float max_total_speed = 0.1f;
-    float total_speed = std::sqrt(vx * vx + vy * vy + omega * omega);
-    if (total_speed > max_total_speed && total_speed > 1e-6f) {
-      const float scale = max_total_speed / total_speed;
-      vx *= scale;
-      vy *= scale;
-      omega *= scale * 1.5f; // 适当增加旋转速度的权重，使其在总速限制下更有响应
-    }
-    m_chassis_controller.set_speed({vx, vy, omega});
-  }
-
-  void press_select(const ps2_state &state) {
-    // 如果按下了select键，切换自动/手动模式
-    if (state.select_is_pressed()) {
-      if (m_mode == mode::manual_mode) {
-        m_mode = mode::auto_mode;
-      } else {
-        m_mode = mode::manual_mode;
+        osDelay(10);
       }
     }
-  }
 
-  void press_triangle(const ps2_state &state) {
-    // 如果按下了三角键，步进电机抬升
-    static bool last_key_triangle = false;
-    bool current_key_triangle = state.triangle_is_pressed();
-    if (state.triangle_is_pressed() && !last_key_triangle) {
-      m_motor.set_direction(true); // 设置方向，例如true表示抬升?
-      m_motor.set_speed(30);       // 设置速度，例如100表示全速
-    } else if (!state.triangle_is_pressed() && last_key_triangle) {
-      m_motor.set_speed(0); // 停止PWM
+    void send_number_request() { m_transfer_controller.send_number_request(); }
+
+    void send_qr_code_request() {
+      m_auto_controller.clear_qr_code_received_success_flag();
+      m_transfer_controller.send_qr_code_request();
     }
-    last_key_triangle = current_key_triangle;
-  }
 
-  void press_cross(const ps2_state &state) {
-    // 如果按下了cross键，步进电机下降
-    static bool last_key_cross = false;
-    bool current_key_cross = state.cross_is_pressed();
-    if (state.cross_is_pressed() && !last_key_cross) {
-      m_motor.set_direction(false); // 设置方向，例如false表示下降?
-      m_motor.set_speed(30);        // 设置速度，例如100表示全速
-    } else if (!state.cross_is_pressed() && last_key_cross) {
-      m_motor.set_speed(0); // 停止PWM
+    bool is_qr_code_received_success() const {
+      return m_auto_controller.is_qr_code_received_success();
     }
-    last_key_cross = current_key_cross;
-  }
 
-  void press_l1(const ps2_state &state) {
-    // 如果按下了左肩键1，爪子夹取物品
-    if (state.l1_is_pressed()) {
-      m_pca9685_controller.set_claw_servo_angle(90);
+  protected:
+    void set_chassis_speed(float vx, float vy, float omega) {
+      constexpr float max_total_speed = 0.1f;
+      float total_speed = std::sqrt(vx * vx + vy * vy + omega * omega);
+      if (total_speed > max_total_speed && total_speed > 1e-6f) {
+        const float scale = max_total_speed / total_speed;
+        vx *= scale;
+        vy *= scale;
+        omega *=
+            scale * 1.5f; // 适当增加旋转速度的权重，使其在总速限制下更有响应
+      }
+      m_chassis_controller.set_speed({vx, vy, omega});
     }
-  }
 
-  void press_l2(const ps2_state &state) {
-    // 如果按下了左肩键2，爪子释放物品
-    if (state.l2_is_pressed()) {
-      m_pca9685_controller.set_claw_servo_angle(0);
+    void press_select(const ps2_state &state) {
+      // 如果按下了select键，切换自动/手动模式
+      if (state.select_is_pressed()) {
+        if (m_mode == mode::manual_mode) {
+          m_mode = mode::auto_mode;
+        } else {
+          m_mode = mode::manual_mode;
+        }
+      }
     }
-  }
 
-  void press_r1(const ps2_state &state) {
-    // 如果按下了右肩键1，爪子往前伸
-    static bool last_key_r1 = false;
-    bool current_key_r1 = state.r1_is_pressed();
-    if (state.r1_is_pressed() && !last_key_r1) {
-      m_pca9685_controller.belt_move_forward(5);
+    void press_triangle(const ps2_state &state) {
+      // 如果按下了三角键，步进电机抬升
+      if (state.triangle_is_pressed()) {
+        m_motor.set_direction(true); // 设置方向，例如true表示抬升?
+        m_motor.set_speed(30);       // 设置速度，例如100表示全速
+      } else if (!state.triangle_is_pressed()) {
+        m_motor.set_speed(0); // 停止PWM
+      }
     }
-    last_key_r1 = current_key_r1;
-  }
 
-  void press_r2(const ps2_state &state) {
-    // 如果按下了右肩键2，爪子往后缩
-    static bool last_key_r2 = false;
-    bool current_key_r2 = state.r2_is_pressed();
-    if (state.r2_is_pressed() && !last_key_r2) {
-      m_pca9685_controller.belt_move_backward(5);
+    void press_cross(const ps2_state &state) {
+      // 如果按下了cross键，步进电机下降
+      if (state.cross_is_pressed()) {
+        m_motor.set_direction(false); // 设置方向，例如false表示下降?
+        m_motor.set_speed(30);        // 设置速度，例如100表示全速
+      } else if (!state.cross_is_pressed()) {
+        m_motor.set_speed(0); // 停止PWM
+      }
     }
-    last_key_r2 = current_key_r2;
-  }
 
-  void press_left(const ps2_state &state) {
-    // 如果按下left，云台左转
-    static bool last_key_left = false;
-    bool current_key_left = state.left_is_pressed();
-    if (state.left_is_pressed() && !last_key_left) {
-      m_pca9685_controller.turret_turn_left(5);
+    void press_l1(const ps2_state &state) {
+      // 如果按下了左肩键1，爪子夹取物品
+      if (state.l1_is_pressed()) {
+        m_pca9685_controller.set_claw_servo_angle(90);
+      }
     }
-    last_key_left = current_key_left;
-  }
 
-  void press_right(const ps2_state &state) {
-    // 如果按下right，云台右转
-    static bool last_key_right = false;
-    bool current_key_right = state.right_is_pressed();
-    if (state.right_is_pressed() && !last_key_right) {
-      m_pca9685_controller.turret_turn_right(5);
+    void press_l2(const ps2_state &state) {
+      // 如果按下了左肩键2，爪子释放物品
+      if (state.l2_is_pressed()) {
+        m_pca9685_controller.set_claw_servo_angle(0);
+      }
     }
-    last_key_right = current_key_right;
-  }
 
-private:
-  chassis_controller m_chassis_controller;
-  transfer_controller m_transfer_controller;
-  pca9685_controller m_pca9685_controller;
-  auto_controller m_auto_controller;
-  stepper_motor m_motor;
-  mode m_mode{mode::manual_mode};
+    void press_r1(const ps2_state &state) {
+      // 如果按下了右肩键1，爪子往前伸
+      if (state.r1_is_pressed()) {
+        m_pca9685_controller.belt_move_forward(1.0f);
+      }
+    }
 
-  thread<2048> m_thread{empty_thread};
+    void press_r2(const ps2_state &state) {
+      // 如果按下了右肩键2，爪子往后缩
+      if (state.r2_is_pressed()) {
+        m_pca9685_controller.belt_move_backward(1.0f);
+      }
+    }
 
-  GPIO_InitTypeDef m_gpio_init_structure{GPIO_PIN_1, GPIO_MODE_OUTPUT_PP,
-                                         GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0};
-  gpio_proxy m_gpio_proxy{GPIOF, &m_gpio_init_structure};
-  timer m_tim8_timer;
+    void press_left(const ps2_state &state) {
+      // 如果按下left，云台左转
+      if (state.left_is_pressed()) {
+        m_pca9685_controller.turret_turn_left(1.0f);
+      }
+    }
 
-  I2C_HandleTypeDef *m_hi2c3{nullptr};
-  SPI_HandleTypeDef *m_hspi{nullptr};
-};
+    void press_right(const ps2_state &state) {
+      // 如果按下right，云台右转
+      if (state.right_is_pressed()) {
+        m_pca9685_controller.turret_turn_right(1.0f);
+      }
+    }
+
+  private:
+    chassis_controller m_chassis_controller;
+    transfer_controller m_transfer_controller;
+    pca9685_controller m_pca9685_controller;
+    auto_controller m_auto_controller;
+    stepper_motor m_motor;
+    mode m_mode{mode::manual_mode};
+
+    thread<2048> m_thread{empty_thread};
+
+    GPIO_InitTypeDef m_gpio_init_structure{GPIO_PIN_1, GPIO_MODE_OUTPUT_PP,
+                                           GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0};
+    gpio_proxy m_gpio_proxy{GPIOF, &m_gpio_init_structure};
+    timer m_tim8_timer;
+
+    I2C_HandleTypeDef *m_hi2c3{nullptr};
+    SPI_HandleTypeDef *m_hspi{nullptr};
+  };
 
 } // namespace gdut
 

@@ -5,6 +5,7 @@
 #include "bsp_pca9685.hpp"
 #include "memory_resource.hpp"
 #include <memory>
+#include <new>
 
 namespace gdut {
 
@@ -17,14 +18,20 @@ public:
     if (!hi2c) {
       return;
     }
-    m_i2c = std::unique_ptr<gdut::i2c, i2c_deleter>(static_cast<gdut::i2c *>(
-        pmr::portable_resource::get_instance()->allocate(1,
-                                                         alignof(gdut::i2c))));
+    auto *resource = pmr::portable_resource::get_instance();
+    void *storage = resource->allocate(sizeof(gdut::i2c), alignof(gdut::i2c));
+    auto *i2c_bus = new (storage) gdut::i2c(hi2c);
+    m_i2c = std::unique_ptr<gdut::i2c, i2c_deleter>(i2c_bus);
+    m_i2c->init();
     m_pca9685.set_parameters(*m_i2c);
-  }
+  }  
 
   void init() {
     if (m_pca9685.is_ready() == HAL_OK) {
+      m_turret_current_angle = 135.0f;
+      m_belt_current_angle = 135.0f;
+      m_claw_current_angle = 90.0f;
+      m_door_current_angle = 90.0f;
       m_pca9685.init(50.0f); // 设置PWM频率为50Hz，适合舵机控制
     }
   }
@@ -34,7 +41,10 @@ public:
     if (angle_deg < 0.0f || angle_deg > 270.0f) {
       return false; // 无效角度
     }
-    m_pca9685.set_servo_angle(m_turret_servo_channel, angle_deg);
+    if (m_pca9685.set_servo_angle(m_turret_servo_channel, angle_deg) !=
+        HAL_OK) {
+      return false;
+    }
     m_turret_current_angle = angle_deg;
     return true;
   }
@@ -44,7 +54,9 @@ public:
     if (angle_deg < 0.0f || angle_deg > 270.0f) {
       return false; // 无效角度
     }
-    m_pca9685.set_servo_angle(m_belt_servo_channel, angle_deg);
+    if (m_pca9685.set_servo_angle(m_belt_servo_channel, angle_deg) != HAL_OK) {
+      return false;
+    }
     m_belt_current_angle = angle_deg;
     return true;
   }
@@ -54,7 +66,9 @@ public:
     if (angle_deg < 0.0f || angle_deg > 270.0f) {
       return false; // 无效角度
     }
-    m_pca9685.set_servo_angle(m_claw_servo_channel, angle_deg);
+    if (m_pca9685.set_servo_angle(m_claw_servo_channel, angle_deg) != HAL_OK) {
+      return false;
+    }
     m_claw_current_angle = angle_deg;
     return true;
   }
@@ -64,7 +78,9 @@ public:
     if (angle_deg < 0.0f || angle_deg > 270.0f) {
       return false; // 无效角度
     }
-    m_pca9685.set_servo_angle(m_door_servo_channel, angle_deg);
+    if (m_pca9685.set_servo_angle(m_door_servo_channel, angle_deg) != HAL_OK) {
+      return false;
+    }
     m_door_current_angle = angle_deg;
     return true;
   }
@@ -73,20 +89,14 @@ public:
     if (m_turret_current_angle - angle_deg < 0.0f) {
       return false; // 无效角度
     }
-    m_pca9685.set_servo_angle(m_turret_servo_channel,
-                              m_turret_current_angle - angle_deg);
-    m_turret_current_angle -= angle_deg;
-    return true;
+    return set_turret_servo_angle(m_turret_current_angle - angle_deg);
   }
 
   bool turret_turn_right(float angle_deg) {
     if (m_turret_current_angle + angle_deg > 270.0f) {
       return false; // 无效角度
     }
-    m_pca9685.set_servo_angle(m_turret_servo_channel,
-                              m_turret_current_angle + angle_deg);
-    m_turret_current_angle += angle_deg;
-    return true;
+    return set_turret_servo_angle(m_turret_current_angle + angle_deg);
   }
 
   bool belt_move_forward(float angle_deg) {
@@ -95,20 +105,14 @@ public:
     if (m_belt_current_angle - angle_deg < 0.0f) {
       return false; // 无效角度
     }
-    m_pca9685.set_servo_angle(m_belt_servo_channel,
-                              m_belt_current_angle - angle_deg);
-    m_belt_current_angle -= angle_deg;
-    return true;
+    return set_belt_servo_angle(m_belt_current_angle - angle_deg);
   }
 
   bool belt_move_backward(float angle_deg) {
     if (m_belt_current_angle + angle_deg > 270.0f) {
       return false; // 无效角度
     }
-    m_pca9685.set_servo_angle(m_belt_servo_channel,
-                              m_belt_current_angle + angle_deg);
-    m_belt_current_angle += angle_deg;
-    return true;
+    return set_belt_servo_angle(m_belt_current_angle + angle_deg);
   }
 
   bool claw_open(float angle_deg) {
@@ -117,20 +121,14 @@ public:
     if (m_claw_current_angle - angle_deg < 0.0f) {
       return false; // 无效角度
     }
-    m_pca9685.set_servo_angle(m_claw_servo_channel,
-                              m_claw_current_angle - angle_deg);
-    m_claw_current_angle -= angle_deg;
-    return true;
+    return set_claw_servo_angle(m_claw_current_angle - angle_deg);
   }
 
   bool claw_close(float angle_deg) {
     if (m_claw_current_angle + angle_deg > 270.0f) {
       return false; // 无效角度
     }
-    m_pca9685.set_servo_angle(m_claw_servo_channel,
-                              m_claw_current_angle + angle_deg);
-    m_claw_current_angle += angle_deg;
-    return true;
+    return set_claw_servo_angle(m_claw_current_angle + angle_deg);
   }
 
   bool door_open(float angle_deg) {
@@ -139,20 +137,14 @@ public:
     if (m_door_current_angle - angle_deg < 0.0f) {
       return false; // 无效角度
     }
-    m_pca9685.set_servo_angle(m_door_servo_channel,
-                              m_door_current_angle - angle_deg);
-    m_door_current_angle -= angle_deg;
-    return true;
+    return set_door_servo_angle(m_door_current_angle - angle_deg);
   }
 
   bool door_close(float angle_deg) {
     if (m_door_current_angle + angle_deg > 270.0f) {
       return false; // 无效角度
     }
-    m_pca9685.set_servo_angle(m_door_servo_channel,
-                              m_door_current_angle + angle_deg);
-    m_door_current_angle += angle_deg;
-    return true;
+    return set_door_servo_angle(m_door_current_angle + angle_deg);
   }
 
 protected:
@@ -161,8 +153,8 @@ protected:
       if (ptr) {
         ptr->deinit(); // 先反初始化i2c对象
         ptr->~i2c();   // 显式调用析构函数
-        pmr::portable_resource::get_instance()->deallocate(ptr, 1,
-                                                           alignof(gdut::i2c));
+        pmr::portable_resource::get_instance()->deallocate(
+            ptr, sizeof(gdut::i2c), alignof(gdut::i2c));
       }
     }
   };

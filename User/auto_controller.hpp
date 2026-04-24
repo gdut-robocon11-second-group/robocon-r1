@@ -22,6 +22,23 @@ class auto_controller {
 public:
   enum class auto_submode { left_mode, right_mode };
 
+  enum class state {
+    // 这里可以根据需要定义一些状态，例如是否正在执行自动任务，当前的自动子模式等
+    idle,
+    wait_qr_code,
+    parse_qr_code,
+    follow_line,
+    detect_object,
+    approach_object,
+    grab_object,
+    back_to_line,
+    follow_line_to_destination,
+    release_object,
+    finished,
+    error,
+    // ...
+  };
+
   auto_controller() = default;
   ~auto_controller() = default;
 
@@ -60,7 +77,15 @@ public:
               qr_code_data.begin() + m_current_qr_code_length,
               m_current_qr_code.begin());
     m_current_qr_code[m_current_qr_code_length] = '\0';
-    m_qr_code_ready = true;
+    m_visual_qr_code_length = m_current_qr_code_length;
+    std::copy(m_current_qr_code.begin(),
+              m_current_qr_code.begin() + m_visual_qr_code_length,
+              m_visual_qr_code.begin());
+    m_visual_qr_code[m_visual_qr_code_length] = '\0';
+
+    const bool received_success = (m_current_qr_code_length > 0);
+    m_qr_code_received_success = received_success;
+    m_qr_code_ready = received_success;
   }
 
   // 提交YOLO检测结果的接口
@@ -73,6 +98,32 @@ public:
 
   void set_auto_submode(auto_submode submode) { m_auto_submode = submode; }
   auto_submode get_auto_submode() const { return m_auto_submode; }
+
+  bool is_qr_code_received_success() const {
+    return m_qr_code_received_success.load();
+  }
+
+  const std::array<char, 32> &get_visual_qr_code() const {
+    return m_visual_qr_code;
+  }
+
+  std::size_t get_visual_qr_code_length() const { return m_visual_qr_code_length; }
+
+  void clear_qr_code_received_success_flag() {
+    m_qr_code_received_success = false;
+    m_qr_code_ready = false;
+    m_current_qr_code_length = 0;
+    m_current_qr_code[0] = '\0';
+    m_visual_qr_code_length = 0;
+    m_visual_qr_code[0] = '\0';
+  }
+
+  void follow_line() 
+  {
+    
+  }
+    
+
 
 protected:
   void run_in_thread() {
@@ -103,7 +154,13 @@ private:
   // 存储当前二维码结果的缓冲区，长度为32字节（包括结尾的'\0'）
   std::array<char, 32> m_current_qr_code{};
   std::size_t m_current_qr_code_length{0};
-  std::atomic<bool> m_qr_code_ready{false};
+
+  // 存储视觉识别出的二维码数组
+  std::array<char, 32> m_visual_qr_code{};
+  std::size_t m_visual_qr_code_length{0};
+
+  std::atomic<bool> m_qr_code_received_success{false};
+  std::atomic<bool> m_qr_code_ready{false};  
 
   // 存储当前YOLO检测结果
   std::atomic<uint16_t> m_current_number_detected{0};

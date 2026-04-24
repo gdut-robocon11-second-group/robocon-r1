@@ -25,6 +25,7 @@
 #include "entry_point.hpp"
 #include "bsp_atk_ms901m.hpp"
 #include "stm32f4xx_hal_uart.h"
+#include "user_controller.hpp"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -75,7 +76,6 @@ const osThreadAttr_t defaultTask_attributes = {
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* USER CODE BEGIN PV */
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -183,10 +183,10 @@ int main(void)
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   gdut::entry_point::instance().init(
-    &hi2c2,&hi2c3, &hspi1, &htim1,
-    &htim2, &htim3, &htim4, &htim5,
-    &htim8, &htim9, &htim10, &htim11, &htim12, &htim13,
-    &huart4, &huart5, &huart1, &huart2, &huart3);
+   &hi2c2,&hi2c3, &hspi1, &htim1,
+   &htim2, &htim3, &htim4, &htim5,
+   &htim8, &htim9, &htim10, &htim11, &htim12, &htim13,
+   &huart4, &huart5, &huart1, &huart2, &huart3);
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
@@ -1210,9 +1210,12 @@ extern "C" void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t S
 }
 
 extern "C" void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
-  if (huart->Instance == USART2) {
+  /*if (huart->Instance == USART2) {
     // ms901.handle_error_rx();
-  }
+     user_controller.transfer().rx_event_callback(Size);
+  }else if (huart->Instance == UART4) {
+    // ms901.handle_error_rx();
+  }*/
 }
 /* USER CODE END 4 */
 

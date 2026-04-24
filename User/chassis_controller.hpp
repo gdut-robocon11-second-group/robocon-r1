@@ -145,10 +145,10 @@ public:
         "encoder_thread", [&]() {
           steady_clock::time_point last_time = steady_clock::now();
           // Ki减小到0.05，积分增长速度更合理
-          pid_controller pid1{1.0f, 0.7f, 0.3f, 0.015f, 1.0f, -1.0f, 1.0f};
-          pid_controller pid2{1.0f, 0.7f, 0.3f, 0.015f, 1.0f, -1.0f, 1.0f};
-          pid_controller pid3{1.0f, 0.7f, 0.3f, 0.015f, 1.0f, -1.0f, 1.0f};
-          pid_controller pid4{1.0f, 0.7f, 0.3f, 0.015f, 1.0f, -1.0f, 1.0f};
+          pid_controller pid1{1.0f, 0.7f, 0.3f, 0.03f, 1.0f, -1.0f, 1.0f};
+          pid_controller pid2{1.0f, 0.7f, 0.3f, 0.03f, 1.0f, -1.0f, 1.0f};
+          pid_controller pid3{1.0f, 0.7f, 0.3f, 0.03f, 1.0f, -1.0f, 1.0f};
+          pid_controller pid4{1.0f, 0.7f, 0.3f, 0.03f, 1.0f, -1.0f, 1.0f};
           for (;;) {
             auto now = steady_clock::now();
             float delta_time =
