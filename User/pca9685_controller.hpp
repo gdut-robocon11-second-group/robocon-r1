@@ -3,9 +3,12 @@
 
 #include "bsp_iic.hpp"
 #include "bsp_pca9685.hpp"
+#include "cmsis_os2.h"
 #include "memory_resource.hpp"
+#include "mutex.hpp"
+#include "stm32f4xx_hal.h"
 #include <memory>
-#include <new>
+#include <mutex>
 
 namespace gdut {
 
@@ -14,35 +17,37 @@ public:
   pca9685_controller() = default;
   ~pca9685_controller() = default;
 
-  void set_parameters(I2C_HandleTypeDef *hi2c) {
-    if (!hi2c) {
+  void set_parameters(gdut::pca9685 *pca9685_ctrl) {
+    m_mutex = mutex{};
+    std::lock_guard<mutex> lock(m_mutex);
+    if (!pca9685_ctrl) {
       return;
     }
-    auto *resource = pmr::portable_resource::get_instance();
-    void *storage = resource->allocate(sizeof(gdut::i2c), alignof(gdut::i2c));
-    auto *i2c_bus = new (storage) gdut::i2c(hi2c);
-    m_i2c = std::unique_ptr<gdut::i2c, i2c_deleter>(i2c_bus);
-    m_i2c->init();
-    m_pca9685.set_parameters(*m_i2c);
-  }  
+    m_pca9685 = pca9685_ctrl;
+  }
 
-  void init() {
-    if (m_pca9685.is_ready() == HAL_OK) {
-      m_turret_current_angle = 135.0f;
-      m_belt_current_angle = 135.0f;
-      m_claw_current_angle = 90.0f;
-      m_door_current_angle = 90.0f;
-      m_pca9685.init(50.0f); // 设置PWM频率为50Hz，适合舵机控制
+  bool init() {
+    std::lock_guard<mutex> lock(m_mutex);
+    if (!m_pca9685) {
+      return false;
     }
+    m_turret_current_angle = 135.0f;
+    m_belt_current_angle = 135.0f;
+    m_claw_current_angle = 90.0f;
+    m_door_current_angle = 90.0f;
+    return m_pca9685->init(50.0f) == HAL_OK; // 设置PWM频率为50Hz，适合舵机控制
   }
 
   // 云台控制接口
   bool set_turret_servo_angle(float angle_deg) {
+    std::lock_guard<mutex> lock(m_mutex);
+    if (!m_pca9685) {
+      return false;
+    }
     if (angle_deg < 0.0f || angle_deg > 270.0f) {
       return false; // 无效角度
     }
-    if (m_pca9685.set_servo_angle(m_turret_servo_channel, angle_deg) !=
-        HAL_OK) {
+    if (m_pca9685->set_servo_angle(m_turret_servo_channel, angle_deg) != HAL_OK) {
       return false;
     }
     m_turret_current_angle = angle_deg;
@@ -51,10 +56,14 @@ public:
 
   // 同步带上的平移舵机控制接口
   bool set_belt_servo_angle(float angle_deg) {
+    std::lock_guard<mutex> lock(m_mutex);
+    if (!m_pca9685) {
+      return false;
+    }
     if (angle_deg < 0.0f || angle_deg > 270.0f) {
       return false; // 无效角度
     }
-    if (m_pca9685.set_servo_angle(m_belt_servo_channel, angle_deg) != HAL_OK) {
+    if (m_pca9685->set_servo_angle(m_belt_servo_channel, angle_deg) != HAL_OK) {
       return false;
     }
     m_belt_current_angle = angle_deg;
@@ -63,10 +72,14 @@ public:
 
   // 夹爪舵机控制接口
   bool set_claw_servo_angle(float angle_deg) {
+    std::lock_guard<mutex> lock(m_mutex);
+    if (!m_pca9685) {
+      return false;
+    }
     if (angle_deg < 0.0f || angle_deg > 270.0f) {
       return false; // 无效角度
     }
-    if (m_pca9685.set_servo_angle(m_claw_servo_channel, angle_deg) != HAL_OK) {
+    if (m_pca9685->set_servo_angle(m_claw_servo_channel, angle_deg) != HAL_OK) {
       return false;
     }
     m_claw_current_angle = angle_deg;
@@ -75,10 +88,14 @@ public:
 
   // 门舵机控制接口
   bool set_door_servo_angle(float angle_deg) {
+    std::lock_guard<mutex> lock(m_mutex);
+    if (!m_pca9685) {
+      return false;
+    }
     if (angle_deg < 0.0f || angle_deg > 270.0f) {
       return false; // 无效角度
     }
-    if (m_pca9685.set_servo_angle(m_door_servo_channel, angle_deg) != HAL_OK) {
+    if (m_pca9685->set_servo_angle(m_door_servo_channel, angle_deg) != HAL_OK) {
       return false;
     }
     m_door_current_angle = angle_deg;
@@ -147,21 +164,30 @@ public:
     return set_door_servo_angle(m_door_current_angle + angle_deg);
   }
 
+  pca9685& get_pca9685() { return *m_pca9685; }
+  const pca9685& get_pca9685() const { return *m_pca9685; }
+
 protected:
   struct i2c_deleter {
     void operator()(gdut::i2c *ptr) const {
       if (ptr) {
-        ptr->deinit(); // 先反初始化i2c对象
-        ptr->~i2c();   // 显式调用析构函数
-        pmr::portable_resource::get_instance()->deallocate(
-            ptr, sizeof(gdut::i2c), alignof(gdut::i2c));
+        ptr->deinit();        // 先反初始化i2c对象
+        std::destroy_at(ptr); // 显式调用析构函数
+      }
+    }
+  };
+
+  struct pca9685_deleter {
+    void operator()(gdut::pca9685 *ptr) const {
+      if (ptr) {
+        std::destroy_at(ptr); // 显式调用析构函数
       }
     }
   };
 
 private:
-  std::unique_ptr<gdut::i2c, i2c_deleter> m_i2c;
-  pca9685 m_pca9685;
+  mutable mutex m_mutex{empty_mutex};
+  gdut::pca9685 *m_pca9685{nullptr};
 
   std::uint8_t m_turret_servo_channel{0}; // 假设通道0用于云台
   std::uint8_t m_belt_servo_channel{1};   // 假设通道1用于同步带上的平移舵机

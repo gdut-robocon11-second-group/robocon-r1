@@ -285,7 +285,7 @@ protected:
 
       // 等待前方有线
       auto original_line_state = m_ir_controller.get_original_line_state();
-      while (m_running && ~original_line_state.forward_mask == 0xFF) {
+      while (m_running && (~original_line_state.forward_mask == 0xFF)) {
         osDelay(10);
         original_line_state = m_ir_controller.get_original_line_state();
       }
@@ -305,7 +305,7 @@ protected:
 
       // 等待前方有线
       auto original_line_state = m_ir_controller.get_original_line_state();
-      while (m_running && ~original_line_state.forward_mask == 0xFF) {
+      while (m_running && (~original_line_state.forward_mask == 0xFF)) {
         osDelay(10);
         original_line_state = m_ir_controller.get_original_line_state();
       }
@@ -679,6 +679,10 @@ protected:
 
       // 复位
       reset_motor_status();
+
+      // 打开门
+      m_pca9685_controller->set_door_servo_angle(0);
+      osDelay(1000); // 等待舵机完成动作
 
       // 再依次序放置之前抓取的方块
       // 底盘运动到指定位置

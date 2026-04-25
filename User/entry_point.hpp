@@ -11,16 +11,18 @@ namespace gdut {
 
 class entry_point : private uncopyable {
 public:
-  void init(I2C_HandleTypeDef *hi2c2, I2C_HandleTypeDef *hi2c3,
-            SPI_HandleTypeDef *hspi1, TIM_HandleTypeDef *htim1,
-            TIM_HandleTypeDef *htim2, TIM_HandleTypeDef *htim3,
-            TIM_HandleTypeDef *htim4, TIM_HandleTypeDef *htim5,
-            TIM_HandleTypeDef *htim8, TIM_HandleTypeDef *htim9,
-            TIM_HandleTypeDef *htim10, TIM_HandleTypeDef *htim11,
-            TIM_HandleTypeDef *htim12, TIM_HandleTypeDef *htim13,
-            UART_HandleTypeDef *huart4, UART_HandleTypeDef *huart5,
-            UART_HandleTypeDef *huart1, UART_HandleTypeDef *huart2,
-            UART_HandleTypeDef *huart3) {
+  void init(gdut::pca9685 *pca9685_ctrl, I2C_HandleTypeDef *hi2c2,
+            I2C_HandleTypeDef *hi2c3, SPI_HandleTypeDef *hspi1,
+            TIM_HandleTypeDef *htim1, TIM_HandleTypeDef *htim2,
+            TIM_HandleTypeDef *htim3, TIM_HandleTypeDef *htim4,
+            TIM_HandleTypeDef *htim5, TIM_HandleTypeDef *htim8,
+            TIM_HandleTypeDef *htim9, TIM_HandleTypeDef *htim10,
+            TIM_HandleTypeDef *htim11, TIM_HandleTypeDef *htim12,
+            TIM_HandleTypeDef *htim13, UART_HandleTypeDef *huart4,
+            UART_HandleTypeDef *huart5, UART_HandleTypeDef *huart1,
+            UART_HandleTypeDef *huart2, UART_HandleTypeDef *huart3) {
+    m_pca9685 = pca9685_ctrl;
+
     m_hi2c2 = hi2c2;
     m_hi2c3 = hi2c3;
     m_hspi1 = hspi1;
@@ -48,9 +50,9 @@ public:
       // Handle error: not initialized
       return;
     }
-    m_user_controller.set_parameters(m_hi2c3, m_hspi1, m_htim1, m_htim2, m_htim3,
-                                     m_htim4, m_htim5, m_htim8, m_htim9, m_huart2,
-                                     m_huart4,m_htim10);
+    m_user_controller.set_parameters(
+        m_pca9685, m_hi2c3, m_hspi1, m_htim1, m_htim2, m_htim3, m_htim4,
+        m_htim5, m_htim8, m_htim9, m_huart2, m_huart4, m_htim10);
     m_user_controller.start();
   }
 
@@ -74,6 +76,8 @@ protected:
 private:
   bool m_initialized = false;
   user_controller m_user_controller;
+
+  gdut::pca9685 *m_pca9685;
 
   I2C_HandleTypeDef *m_hi2c2;
   I2C_HandleTypeDef *m_hi2c3;

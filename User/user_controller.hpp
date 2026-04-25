@@ -9,6 +9,7 @@
 #include "pca9685_controller.hpp"
 #include "stm32f4xx_hal.h"
 #include "stm32f4xx_hal_tim.h"
+#include "stm32f4xx_hal_uart.h"
 #include "thread.hpp"
 #include "transfer_controller.hpp"
 #include "uncopyable.hpp"
@@ -23,7 +24,7 @@ public:
   ~user_controller() = default;
 
   // 传入所有需要的外设句柄，进行必要的初始化
-  void set_parameters(I2C_HandleTypeDef *hi2c3, SPI_HandleTypeDef *m_hspi1,
+  void set_parameters(gdut::pca9685 *pca9685_ctrl, I2C_HandleTypeDef *hi2c3, SPI_HandleTypeDef *m_hspi1,
                       TIM_HandleTypeDef *htim1, TIM_HandleTypeDef *htim2,
                       TIM_HandleTypeDef *htim3, TIM_HandleTypeDef *htim4,
                       TIM_HandleTypeDef *htim5, TIM_HandleTypeDef *htim8,
@@ -42,8 +43,7 @@ public:
     m_transfer_controller.set_send_function(
         [huart4](const std::uint8_t *data, const std::uint8_t *end) {
           size_t size = static_cast<size_t>(end - data);
-          HAL_UART_Transmit(huart4, const_cast<uint8_t *>(data), size,
-                            HAL_MAX_DELAY);
+          HAL_UART_Transmit_IT(huart4, const_cast<uint8_t *>(data), size);
         });
     m_transfer_controller.set_yolo_result_callback(
         [this](transfer_protocol::yolo_detection_result result) {
@@ -67,8 +67,7 @@ public:
               std::span<const char>(qr_code, length));
         });
     // 设置PCA9685控制器参数
-    m_pca9685_controller.set_parameters(m_hi2c3);
-    m_pca9685_controller.init();
+    m_pca9685_controller.set_parameters(pca9685_ctrl);
     // 设置步进电机控制器参数
     m_motor.set_parameters(&m_gpio_proxy, &m_tim8_timer, TIM_CHANNEL_1);
     m_auto_controller.set_parameters(&m_transfer_controller,
@@ -80,11 +79,14 @@ public:
     if (m_thread.joinable()) {
       return; // 已经在运行了
     }
-    m_chassis_controller.start();
-    m_transfer_controller.start();
+    if (!m_pca9685_controller.init()) {
+      return;
+    }
+    // m_chassis_controller.start();
+    // m_transfer_controller.start();
     m_thread =
-        thread<2048>{"user_controller_thread", [this]() { run_in_thread(); }};
-    m_auto_controller.start();
+        thread<8192, osPriorityAboveNormal>{"user_controller_thread", [this]() { run_in_thread(); }};
+    // m_auto_controller.start();
   }
 
   chassis_controller &chassis() { return m_chassis_controller; }
@@ -117,6 +119,9 @@ protected:
       if (ps2_controller.poll()) {
         // 读取状态
         const ps2_state state = ps2_controller.read_state();
+
+        // 处理select键的按下事件，切换自动/手动模式
+        press_select(state);
 
         // 手动模式才响应手柄输入
         if (m_mode == mode::manual_mode) {
@@ -166,7 +171,7 @@ protected:
           }
 
           // 将左摇杆的Y轴控制前后，左摇杆的X轴控制左右，右摇杆的X轴控制旋转速度
-          set_chassis_speed(ly, lx, rx);
+          set_chassis_speed(lx, ly, rx);
         } else if (m_mode == mode::auto_mode) {
           // 自动模式下可以根据需要处理PS2输入，例如按键控制某些自动行为
 
@@ -302,7 +307,7 @@ private:
   stepper_motor m_motor;
   mode m_mode{mode::manual_mode};
 
-  thread<2048> m_thread{empty_thread};
+  thread<8192, osPriorityAboveNormal> m_thread{empty_thread};
 
   GPIO_InitTypeDef m_gpio_init_structure{GPIO_PIN_1, GPIO_MODE_OUTPUT_PP,
                                          GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0};

@@ -141,7 +141,7 @@ public:
     }
     m_last_imu_control_time = steady_clock::now();
     m_imu.start();
-    m_thread = thread<2048, osPriorityRealtime>{
+    m_thread = thread<2048, osPriorityRealtime7>{
         "encoder_thread", [&]() {
           steady_clock::time_point last_time = steady_clock::now();
           // Ki减小到0.05，积分增长速度更合理
@@ -161,13 +161,13 @@ public:
             // motor.get_current_speed() 已经是按 ppr 和采样周期换算后的速度
             // 控制器的输入，使其更敏感，避免死区过大导致响应迟钝
             float speed1 =
-                m_motor1.get_current_speed() / 3584.61562f * 10000.0f / 1.5f;
+                -m_motor1.get_current_speed() / 3584.61562f * 10000.0f / 1.5f;
             float speed2 =
                 -m_motor2.get_current_speed() / 3584.61562f * 10000.0f / 1.5f;
             float speed3 =
                 -m_motor3.get_current_speed() / 3584.61562f * 10000.0f / 1.5f;
             float speed4 =
-                -m_motor4.get_current_speed() / 3584.61562f * 10000.0f / 1.5f;
+                m_motor4.get_current_speed() / 3584.61562f * 10000.0f / 1.5f;
 
             // 获取目标速度，更新 PID 控制器的目标值
             std::atomic_thread_fence(std::memory_order_acquire);
@@ -198,7 +198,7 @@ public:
             osDelay(2);
           }
         }};
-    // m_imu_thread = thread<2048, osPriorityAboveNormal>{
+    // m_imu_thread = thread<2048, osPriorityHigh>{
     //     "imu_thread", [&]() {
     //       pid_controller imu_vx{1.0f, 0.5f, 0.0f, 0.01f, 1.0f, -1.0f, 1.0f};
     //       pid_controller imu_vy{1.0f, 0.5f, 0.0f, 0.01f, 1.0f, -1.0f, 1.0f};
@@ -294,10 +294,10 @@ protected:
     chassis_kinematics<1.0f> kinematics;
     auto wheel_speed = kinematics.forward_kinematics(velocity);
     // 因为电机安装方向的关系，轮速需要进行符号调整
-    m_target_speed1.store(wheel_speed[0], std::memory_order_relaxed);
+    m_target_speed1.store(-wheel_speed[0], std::memory_order_relaxed);
     m_target_speed2.store(wheel_speed[1], std::memory_order_relaxed);
     m_target_speed3.store(wheel_speed[2], std::memory_order_relaxed);
-    m_target_speed4.store(-wheel_speed[3], std::memory_order_relaxed);
+    m_target_speed4.store(wheel_speed[3], std::memory_order_relaxed);
     std::atomic_thread_fence(std::memory_order_release);
   }
 
@@ -324,8 +324,8 @@ private:
   UART_HandleTypeDef *m_huart2{nullptr};
 
   // 异步线程，用于处理编码器数据和控制电机
-  thread<2048, osPriorityRealtime> m_thread{empty_thread};
-  thread<2048, osPriorityAboveNormal> m_imu_thread{empty_thread};
+  thread<2048, osPriorityRealtime7> m_thread{empty_thread};
+  thread<2048, osPriorityHigh> m_imu_thread{empty_thread};
   std::atomic<float> m_target_speed1{0.0f};
   std::atomic<float> m_target_speed2{0.0f};
   std::atomic<float> m_target_speed3{0.0f};

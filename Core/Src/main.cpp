@@ -104,7 +104,8 @@ static void MX_TIM5_Init(void);
 void StartDefaultTask(void *argument);
 
 /* USER CODE BEGIN PFP */
-
+gdut::i2c i2c3{&hi2c3};
+gdut::pca9685 pca9685_ctrl{i2c3};
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -182,8 +183,9 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
+  pca9685_ctrl.init();
   gdut::entry_point::instance().init(
-   &hi2c2,&hi2c3, &hspi1, &htim1,
+   &pca9685_ctrl, &hi2c2,&hi2c3, &hspi1, &htim1,
    &htim2, &htim3, &htim4, &htim5,
    &htim8, &htim9, &htim10, &htim11, &htim12, &htim13,
    &huart4, &huart5, &huart1, &huart2, &huart3);
@@ -1230,7 +1232,7 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
 
-  // 启动主程序
+  // 启动主程序 
   gdut::entry_point::instance().start();
   /* Infinite loop */
   for(;;)
