@@ -76,6 +76,7 @@ const osThreadAttr_t defaultTask_attributes = {
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* USER CODE BEGIN PV */
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -104,13 +105,13 @@ static void MX_TIM5_Init(void);
 void StartDefaultTask(void *argument);
 
 /* USER CODE BEGIN PFP */
-gdut::i2c i2c3{&hi2c3};
-gdut::pca9685 pca9685_ctrl{i2c3};
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+gdut::i2c i2c3{&hi2c3};
+gdut::pca9685 pca9685_ctrl{i2c3, gdut::pca9685::default_address};
 /* USER CODE END 0 */
 
 /**
@@ -183,7 +184,6 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
-  pca9685_ctrl.init();
   gdut::entry_point::instance().init(
    &pca9685_ctrl, &hi2c2,&hi2c3, &hspi1, &htim1,
    &htim2, &htim3, &htim4, &htim5,
@@ -842,7 +842,7 @@ static void MX_TIM12_Init(void)
 
   /* USER CODE END TIM12_Init 1 */
   htim12.Instance = TIM12;
-  htim12.Init.Prescaler = 15;
+  htim12.Init.Prescaler = 5;
   htim12.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim12.Init.Period = 999;
   htim12.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -1231,7 +1231,6 @@ extern "C" void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-
   // 启动主程序 
   gdut::entry_point::instance().start();
   /* Infinite loop */

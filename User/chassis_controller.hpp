@@ -141,7 +141,7 @@ public:
     }
     m_last_imu_control_time = steady_clock::now();
     m_imu.start();
-    m_thread = thread<2048, osPriorityRealtime7>{
+    m_thread = thread<2048, osPriorityRealtime>{
         "encoder_thread", [&]() {
           steady_clock::time_point last_time = steady_clock::now();
           // Ki减小到0.05，积分增长速度更合理
@@ -324,7 +324,7 @@ private:
   UART_HandleTypeDef *m_huart2{nullptr};
 
   // 异步线程，用于处理编码器数据和控制电机
-  thread<2048, osPriorityRealtime7> m_thread{empty_thread};
+  thread<2048, osPriorityRealtime> m_thread{empty_thread};
   thread<2048, osPriorityHigh> m_imu_thread{empty_thread};
   std::atomic<float> m_target_speed1{0.0f};
   std::atomic<float> m_target_speed2{0.0f};

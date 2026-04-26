@@ -24,12 +24,13 @@ public:
   ~user_controller() = default;
 
   // 传入所有需要的外设句柄，进行必要的初始化
-  void set_parameters(gdut::pca9685 *pca9685_ctrl, I2C_HandleTypeDef *hi2c3, SPI_HandleTypeDef *m_hspi1,
-                      TIM_HandleTypeDef *htim1, TIM_HandleTypeDef *htim2,
-                      TIM_HandleTypeDef *htim3, TIM_HandleTypeDef *htim4,
-                      TIM_HandleTypeDef *htim5, TIM_HandleTypeDef *htim8,
-                      TIM_HandleTypeDef *htim9, UART_HandleTypeDef *huart2,
-                      UART_HandleTypeDef *huart4, TIM_HandleTypeDef *htim10) {
+  void set_parameters(gdut::pca9685 *pca9685_ctrl, I2C_HandleTypeDef *hi2c3,
+                      SPI_HandleTypeDef *m_hspi1, TIM_HandleTypeDef *htim1,
+                      TIM_HandleTypeDef *htim2, TIM_HandleTypeDef *htim3,
+                      TIM_HandleTypeDef *htim4, TIM_HandleTypeDef *htim5,
+                      TIM_HandleTypeDef *htim9, TIM_HandleTypeDef *htim12,
+                      UART_HandleTypeDef *huart2, UART_HandleTypeDef *huart4,
+                      TIM_HandleTypeDef *htim10) {
     // 初始化底盘控制器
     m_chassis_controller.set_parameters(htim1, htim2, htim3, htim4, htim5,
                                         htim9, huart2);
@@ -37,7 +38,7 @@ public:
     m_hspi = m_hspi1;
     m_hi2c3 = hi2c3;
     // 设置步进电机控制器参数
-    m_tim8_timer = timer{htim8};
+    m_tim12_timer = timer{htim12};
     // 设置通信控制器的UART和回调函数
     m_transfer_controller.set_uart(huart4);
     m_transfer_controller.set_send_function(
@@ -68,11 +69,9 @@ public:
         });
     // 设置PCA9685控制器参数
     m_pca9685_controller.set_parameters(pca9685_ctrl);
-    // 设置步进电机控制器参数
-    m_motor.set_parameters(&m_gpio_proxy, &m_tim8_timer, TIM_CHANNEL_1);
-    m_auto_controller.set_parameters(&m_transfer_controller,
-                                     &m_chassis_controller,
-                                     &m_pca9685_controller, &m_motor);
+    // m_auto_controller.set_parameters(&m_transfer_controller,
+    //                                  &m_chassis_controller,
+    //                                  &m_pca9685_controller);
   }
 
   void start() {
@@ -82,11 +81,14 @@ public:
     if (!m_pca9685_controller.init()) {
       return;
     }
-    // m_chassis_controller.start();
+    m_tim12_timer.start();
+    gdut::timer::timer_pwm pwm{&m_tim12_timer};
+    pwm.pwm_start(TIM_CHANNEL_1);
+    m_chassis_controller.start();
     // m_transfer_controller.start();
-    m_thread =
-        thread<8192, osPriorityAboveNormal>{"user_controller_thread", [this]() { run_in_thread(); }};
     // m_auto_controller.start();
+    m_thread = thread<8192, osPriorityHigh7>{"user_controller_thread",
+                                             [this]() { run_in_thread(); }};
   }
 
   chassis_controller &chassis() { return m_chassis_controller; }
@@ -98,6 +100,12 @@ public:
 
 protected:
   void run_in_thread() {
+    // 初始化舵机到默认位置，确保机械结构处于已知状态
+    m_pca9685_controller.set_turret_servo_angle(0.0f);
+    m_pca9685_controller.set_belt_servo_angle(0.0f);
+    m_pca9685_controller.set_claw_servo_angle(90.0f);
+    m_pca9685_controller.set_door_servo_angle(90.0f);
+
     spi_proxy spi_proxy{m_hspi};
     ps2_controller ps2_controller{
         {[](bool state) {
@@ -120,12 +128,11 @@ protected:
         // 读取状态
         const ps2_state state = ps2_controller.read_state();
 
-        // 处理select键的按下事件，切换自动/手动模式
-        press_select(state);
-
+        // // 处理select键的按下事件，切换自动/手动模式
+        // press_select(state);
         // 手动模式才响应手柄输入
         if (m_mode == mode::manual_mode) {
-
+          
           // 按下三角键，步进电机抬升
           press_triangle(state);
           // 按下cross键，步进电机下降
@@ -172,38 +179,39 @@ protected:
 
           // 将左摇杆的Y轴控制前后，左摇杆的X轴控制左右，右摇杆的X轴控制旋转速度
           set_chassis_speed(lx, ly, rx);
-        } else if (m_mode == mode::auto_mode) {
-          // 自动模式下可以根据需要处理PS2输入，例如按键控制某些自动行为
-
-          if (state.up_is_pressed()) {
-            // 如果按下了up键
-            m_auto_controller.set_auto_submode(
-                auto_controller::auto_submode::left_mode);
-          }
-
-          if (state.down_is_pressed()) {
-            // 如果按下了down键
-            m_auto_controller.set_auto_submode(
-                auto_controller::auto_submode::right_mode);
-          }
-
-          if (state.start_is_pressed()) {
-            // 如果按下了start键
-            m_auto_controller.start_all();
-          }
-
-          if (state.left_is_pressed()) {
-            // 如果按下了left键，切换数字识别模式
-            m_auto_controller.set_number_detect_mode(
-                auto_controller::number_detect_mode::black_mode);
-          }
-
-          if (state.right_is_pressed()) {
-            // 如果按下了right键，切换数字识别模式
-            m_auto_controller.set_number_detect_mode(
-                auto_controller::number_detect_mode::white_mode);
-          }
         }
+        //   if (m_mode == mode::auto_mode) {
+        //     // 自动模式下可以根据需要处理PS2输入，例如按键控制某些自动行为
+
+        //     if (state.up_is_pressed()) {
+        //       // 如果按下了up键
+        //       m_auto_controller.set_auto_submode(
+        //           auto_controller::auto_submode::left_mode);
+        //     }
+
+        //     if (state.down_is_pressed()) {
+        //       // 如果按下了down键
+        //       m_auto_controller.set_auto_submode(
+        //           auto_controller::auto_submode::right_mode);
+        //     }
+
+        //     if (state.start_is_pressed()) {
+        //       // 如果按下了start键
+        //       m_auto_controller.start_all();
+        //     }
+
+        //     if (state.left_is_pressed()) {
+        //       // 如果按下了left键，切换数字识别模式
+        //       m_auto_controller.set_number_detect_mode(
+        //           auto_controller::number_detect_mode::black_mode);
+        //     }
+
+        //     if (state.right_is_pressed()) {
+        //       // 如果按下了right键，切换数字识别模式
+        //       m_auto_controller.set_number_detect_mode(
+        //           auto_controller::number_detect_mode::white_mode);
+        //     }
+        //   }
       }
       osDelay(10);
     }
@@ -240,34 +248,42 @@ protected:
   void press_triangle(const ps2_state &state) {
     // 如果按下了三角键，步进电机抬升
     if (state.triangle_is_pressed()) {
-      m_motor.set_direction(true); // 设置方向，例如true表示抬升?
-      m_motor.set_speed(30);       // 设置速度，例如100表示全速
+      m_gpio_proxy.write(true); // 设置正向
+      gdut::timer::timer_pwm pwm{&m_tim12_timer};
+      pwm.set_duty(TIM_CHANNEL_1, 499); // 设置占空比，例如300表示30%的占空比
+      osDelay(10);
+      pwm.set_duty(TIM_CHANNEL_1, 0); // 停止PWM
     } else if (!state.triangle_is_pressed()) {
-      m_motor.set_speed(0); // 停止PWM
+      gdut::timer::timer_pwm pwm{&m_tim12_timer};
+      pwm.set_duty(TIM_CHANNEL_1, 0); // 停止PWM
     }
   }
 
   void press_cross(const ps2_state &state) {
     // 如果按下了cross键，步进电机下降
     if (state.cross_is_pressed()) {
-      m_motor.set_direction(false); // 设置方向，例如false表示下降?
-      m_motor.set_speed(30);        // 设置速度，例如100表示全速
+      m_gpio_proxy.write(false); // 设置反向
+      gdut::timer::timer_pwm pwm{&m_tim12_timer};
+      pwm.set_duty(TIM_CHANNEL_1, 499); // 设置占空比，例如300表示30%的占空比
+      osDelay(10);
+      pwm.set_duty(TIM_CHANNEL_1, 0); // 停止PWM
     } else if (!state.cross_is_pressed()) {
-      m_motor.set_speed(0); // 停止PWM
+      gdut::timer::timer_pwm pwm{&m_tim12_timer};
+      pwm.set_duty(TIM_CHANNEL_1, 0); // 停止PWM
     }
   }
 
   void press_l1(const ps2_state &state) {
     // 如果按下了左肩键1，爪子夹取物品
     if (state.l1_is_pressed()) {
-      m_pca9685_controller.set_claw_servo_angle(90);
+      m_pca9685_controller.claw_close(1.0f);
     }
   }
 
   void press_l2(const ps2_state &state) {
     // 如果按下了左肩键2，爪子释放物品
     if (state.l2_is_pressed()) {
-      m_pca9685_controller.set_claw_servo_angle(0);
+      m_pca9685_controller.claw_open(1.0f);
     }
   }
 
@@ -288,14 +304,14 @@ protected:
   void press_left(const ps2_state &state) {
     // 如果按下left，云台左转
     if (state.left_is_pressed()) {
-      m_pca9685_controller.turret_turn_left(1.0f);
+      m_pca9685_controller.turret_turn_left(0.5f);
     }
   }
 
   void press_right(const ps2_state &state) {
     // 如果按下right，云台右转
     if (state.right_is_pressed()) {
-      m_pca9685_controller.turret_turn_right(1.0f);
+      m_pca9685_controller.turret_turn_right(0.5f);
     }
   }
 
@@ -304,15 +320,14 @@ private:
   transfer_controller m_transfer_controller;
   pca9685_controller m_pca9685_controller;
   auto_controller m_auto_controller;
-  stepper_motor m_motor;
   mode m_mode{mode::manual_mode};
 
-  thread<8192, osPriorityAboveNormal> m_thread{empty_thread};
+  thread<8192, osPriorityHigh7> m_thread{empty_thread};
 
   GPIO_InitTypeDef m_gpio_init_structure{GPIO_PIN_1, GPIO_MODE_OUTPUT_PP,
                                          GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0};
   gpio_proxy m_gpio_proxy{GPIOF, &m_gpio_init_structure};
-  timer m_tim8_timer;
+  timer m_tim12_timer;
 
   I2C_HandleTypeDef *m_hi2c3{nullptr};
   SPI_HandleTypeDef *m_hspi{nullptr};

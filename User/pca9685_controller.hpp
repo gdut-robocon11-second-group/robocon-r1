@@ -31,10 +31,10 @@ public:
     if (!m_pca9685) {
       return false;
     }
-    m_turret_current_angle = 135.0f;
-    m_belt_current_angle = 135.0f;
+    m_turret_current_angle = 0.0f;
+    m_belt_current_angle = 0.0f;
     m_claw_current_angle = 90.0f;
-    m_door_current_angle = 90.0f;
+    m_door_current_angle = 0.0f;
     return m_pca9685->init(50.0f) == HAL_OK; // 设置PWM频率为50Hz，适合舵机控制
   }
 
@@ -76,7 +76,7 @@ public:
     if (!m_pca9685) {
       return false;
     }
-    if (angle_deg < 0.0f || angle_deg > 270.0f) {
+    if (angle_deg < 45.0f || angle_deg > 135.0f) {
       return false; // 无效角度
     }
     if (m_pca9685->set_servo_angle(m_claw_servo_channel, angle_deg) != HAL_OK) {
@@ -103,46 +103,46 @@ public:
   }
 
   bool turret_turn_left(float angle_deg) {
-    if (m_turret_current_angle - angle_deg < 0.0f) {
-      return false; // 无效角度
-    }
-    return set_turret_servo_angle(m_turret_current_angle - angle_deg);
-  }
-
-  bool turret_turn_right(float angle_deg) {
     if (m_turret_current_angle + angle_deg > 270.0f) {
       return false; // 无效角度
     }
     return set_turret_servo_angle(m_turret_current_angle + angle_deg);
   }
 
+  bool turret_turn_right(float angle_deg) {
+    if (m_turret_current_angle - angle_deg < 0.0f) {
+      return false; // 无效角度
+    }
+    return set_turret_servo_angle(m_turret_current_angle - angle_deg);
+  }
+
   bool belt_move_forward(float angle_deg) {
     // 假设同步带上舵机的前进是通过减少角度实现的，即从初始位置向0度方向前进
     // 否则需要根据实际机械结构调整逻辑
-    if (m_belt_current_angle - angle_deg < 0.0f) {
-      return false; // 无效角度
-    }
-    return set_belt_servo_angle(m_belt_current_angle - angle_deg);
-  }
-
-  bool belt_move_backward(float angle_deg) {
     if (m_belt_current_angle + angle_deg > 270.0f) {
       return false; // 无效角度
     }
     return set_belt_servo_angle(m_belt_current_angle + angle_deg);
   }
 
+  bool belt_move_backward(float angle_deg) {
+    if (m_belt_current_angle - angle_deg < 0.0f) {
+      return false; // 无效角度
+    }
+    return set_belt_servo_angle(m_belt_current_angle - angle_deg);
+  }
+
   bool claw_open(float angle_deg) {
     // 假设夹爪的打开是通过减少角度实现的，即从初始位置向0度方向打开
     // 否则需要根据实际机械结构调整逻辑
-    if (m_claw_current_angle - angle_deg < 0.0f) {
+    if (m_claw_current_angle - angle_deg < 45.0f) {
       return false; // 无效角度
     }
     return set_claw_servo_angle(m_claw_current_angle - angle_deg);
   }
 
   bool claw_close(float angle_deg) {
-    if (m_claw_current_angle + angle_deg > 270.0f) {
+    if (m_claw_current_angle + angle_deg > 135.0f) {
       return false; // 无效角度
     }
     return set_claw_servo_angle(m_claw_current_angle + angle_deg);
@@ -189,10 +189,10 @@ private:
   mutable mutex m_mutex{empty_mutex};
   gdut::pca9685 *m_pca9685{nullptr};
 
-  std::uint8_t m_turret_servo_channel{0}; // 假设通道0用于云台
-  std::uint8_t m_belt_servo_channel{1};   // 假设通道1用于同步带上的平移舵机
-  std::uint8_t m_claw_servo_channel{2};   // 假设通道2用于夹爪舵机
-  std::uint8_t m_door_servo_channel{3};   // 假设通道3用于门的舵机
+  std::uint8_t m_turret_servo_channel{4}; // 假设通道0用于云台
+  std::uint8_t m_belt_servo_channel{5};   // 假设通道1用于同步带上的平移舵机
+  std::uint8_t m_claw_servo_channel{6};   // 假设通道2用于夹爪舵机
+  std::uint8_t m_door_servo_channel{7};   // 假设通道3用于门的舵机
 
   float m_turret_current_angle{0}; // 当前云台角度
   float m_belt_current_angle{0};   // 当前同步带角度

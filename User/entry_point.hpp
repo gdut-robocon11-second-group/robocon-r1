@@ -52,7 +52,7 @@ public:
     }
     m_user_controller.set_parameters(
         m_pca9685, m_hi2c3, m_hspi1, m_htim1, m_htim2, m_htim3, m_htim4,
-        m_htim5, m_htim8, m_htim9, m_huart2, m_huart4, m_htim10);
+        m_htim5, m_htim9, m_htim12, m_huart2, m_huart4, m_htim10);
     m_user_controller.start();
   }
 
